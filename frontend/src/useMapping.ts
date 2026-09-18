@@ -52,6 +52,7 @@ export function useMapping(reload: () => Promise<unknown>) {
   const [pattern, setPattern] = useState("grid");
   const [blackOthers, setBlackOthers] = useState(true);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [ack, setAck] = useState(-1);
   const owner = useRef<Session | null>(null);
@@ -103,6 +104,7 @@ export function useMapping(reload: () => Promise<unknown>) {
       );
       return false;
     }
+    setMessage("");
     setMapping(next);
     setError("");
     pending.current = {
@@ -117,6 +119,7 @@ export function useMapping(reload: () => Promise<unknown>) {
   async function begin(surfaceId: string, revision: number) {
     setBusy(true);
     setError("");
+    setMessage("");
     try {
       const result = await request<Session>("mapping", {
         method: "POST",
@@ -153,6 +156,7 @@ export function useMapping(reload: () => Promise<unknown>) {
       owner.current = result;
       setSession(result);
       setSaved(result.mapping);
+      setMessage("Mapping saved");
       setError("");
       await reload();
     } catch (e) {
@@ -166,6 +170,7 @@ export function useMapping(reload: () => Promise<unknown>) {
     try {
       pending.current = null;
       clearTimeout(timer.current);
+      timer.current = undefined;
       await working.current;
       await request(`mapping/${owner.current?.id}`, { method: "DELETE" });
       owner.current = null;
@@ -211,6 +216,7 @@ export function useMapping(reload: () => Promise<unknown>) {
     pattern,
     blackOthers,
     error,
+    message,
     busy,
     ack,
     begin,

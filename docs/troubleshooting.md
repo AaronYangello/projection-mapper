@@ -37,7 +37,7 @@ enabled scene must match their tag selectors. Ambient-only installations remain 
 automatically and fetches the active project again. If authentication is configured, reload
 and enter the matching token. Session storage keeps it only within this browser tab session.
 
-**Low FPS.** Read actual FPS in Runtime/Diagnostics. Preview is intentionally only 2 fps and
+**Low FPS.** Read actual FPS in Playback/Diagnostics. Preview is intentionally only 2 fps and
 can cost some GPU readback time. Test a smaller canvas or fewer/lower-resolution surfaces;
 observe actual behavior on the target GPU. Late frames count native loop work exceeding 1.5×
 the target budget; they are not a decoder drop count. Video is currently CPU-decoded, so
@@ -54,10 +54,10 @@ stale session, refresh, and start mapping again. Save mapping is allowed during 
 full project/media edits are not.
 
 **Sample video is missing.** Run `.venv/bin/python scripts/download_sample.py`, then stop and
-Scan media or restart. The download is optional; colors remain playable without it. Put your
+Scan folder or restart. The download is optional; colors remain playable without it. Put your
 own supported files inside the project's `media/` directory, scan, then Add to show.
 
 **Media is indexed but not selected.** Check the error shown on its card, scene enabled state,
-and show tag filters. Play now needs an enabled foreground surface. After fixing a file that
+and show tag filters. Play on surface needs an enabled foreground surface. After fixing a file that
 failed decoding, stop and rescan to make it eligible again. Audio is intentionally muted;
 hardware decoding is not enabled in this milestone.

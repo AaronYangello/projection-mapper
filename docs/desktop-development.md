@@ -57,3 +57,11 @@ ignored `artifacts/`. The initial verification record is in `docs/verification.m
 `requirements-lock.txt` records the exact Python environment verified on this macOS host.
 `pyproject.toml` is the cross-platform dependency contract; the installer resolves a compatible
 set on its target Python/platform. Pin a Pi-tested lock after commissioning there.
+
+
+## Browser workflow regressions
+
+`cd frontend && npm run test:ui` builds the UI and starts a disposable API-only project on
+127.0.0.1:8012. It uses the installed Google Chrome browser through Playwright. No user project
+is changed. Keep this port free for the fixture. This complements the actual native GPU suite;
+browser tests alone do not prove decoded or projected pixels. See the UX research/review report.

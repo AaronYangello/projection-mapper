@@ -3,6 +3,21 @@ from projection_show.api import create_app
 from projection_show.runtime import RenderBridge, Runtime
 
 
+def test_frontend_reload_serves_current_build(store, tmp_path):
+    frontend = tmp_path / "frontend"
+    (frontend / "assets").mkdir(parents=True)
+    index = frontend / "index.html"
+    index.write_text('<script src="/assets/first.js"></script>')
+    with TestClient(create_app(Runtime(store, RenderBridge()), frontend)) as client:
+        response = client.get("/")
+        assert response.headers["cache-control"] == "no-store"
+        assert "first.js" in response.text
+        index.write_text('<script src="/assets/second.js"></script>')
+        response = client.get("/")
+        assert response.headers["cache-control"] == "no-store"
+        assert "second.js" in response.text
+
+
 def test_pause_blackout_restore_freeze_exact_position(store, monkeypatch):
     now = [100.0]
     monkeypatch.setattr("projection_show.runtime.time.monotonic", lambda: now[0])

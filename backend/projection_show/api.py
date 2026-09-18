@@ -151,7 +151,10 @@ def create_app(runtime: Runtime, frontend: Path | None = None) -> FastAPI:
 
     @app.get("/api/media")
     async def media():
-        return {"assets": runtime.media}
+        return {
+            "assets": runtime.media,
+            "folder": str((runtime.store.path.parent / "media").resolve()),
+        }
 
     @app.post("/api/media/scan")
     async def scan_media():
@@ -163,7 +166,10 @@ def create_app(runtime: Runtime, frontend: Path | None = None) -> FastAPI:
         if runtime.revision != generation:
             raise HTTPException(409, "Project changed during scan; rescan again")
         mapping_call(lambda: runtime.install_media_index(entries))
-        return {"assets": runtime.media}
+        return {
+            "assets": runtime.media,
+            "folder": str((runtime.store.path.parent / "media").resolve()),
+        }
 
     @app.post("/api/media/{asset_id}/add")
     async def add_media(asset_id: str):
@@ -223,7 +229,8 @@ def create_app(runtime: Runtime, frontend: Path | None = None) -> FastAPI:
 
         @app.get("/")
         async def index():
-            return FileResponse(frontend / "index.html")
+            # Rebuilds change the hashed asset names; never reuse a stale app shell.
+            return FileResponse(frontend / "index.html", headers={"Cache-Control": "no-store"})
     else:
 
         @app.get("/")

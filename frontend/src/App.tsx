@@ -1,13 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
-  ArrowUpRight,
   Box,
   ChevronRight,
   Circle,
   CircleStop,
   Columns3,
-  Gauge,
   Layers,
   Monitor,
   Moon,
@@ -21,6 +19,7 @@ import {
   Waves,
   X,
 } from "lucide-react";
+import { DiscardDialog } from "./editing";
 import { setToken } from "./api";
 import { MediaPage } from "./MediaPage";
 import { MappingPage } from "./MappingPage";
@@ -34,7 +33,9 @@ const clock = (seconds: number) =>
     .padStart(2, "0")}:${Math.floor(seconds % 60)
     .toString()
     .padStart(2, "0")}`;
-const words = (text: string) => text.toLowerCase().replaceAll("_", " ");
+const words = (text: string) =>
+  ({ FOREGROUND: "Playing", IDLE: "Stopped", GAP: "Between cues" })[text] ??
+  text.toLowerCase().replaceAll("_", " ");
 
 function Output({
   project,
@@ -54,7 +55,7 @@ function Output({
       <div className="panel-heading">
         <div>
           <Monitor size={16} />
-          <h2>Output canvas</h2>
+          <h2>Projected output</h2>
         </div>
         <span className="subtle">
           {project.canvas.width} × {project.canvas.height}
@@ -114,7 +115,7 @@ function CurrentCue({ project, status }: { project: Project; status: Status }) {
             ? "Blackout"
             : active
               ? words(status.phase)
-              : "Ready"}
+              : "Show stopped"}
         </span>
       </div>
       <div className="current-body">
@@ -124,14 +125,18 @@ function CurrentCue({ project, status }: { project: Project; status: Status }) {
             background: active ? (scene?.color ?? "#506d63") : "#26302e",
           }}
         >
-          <Waves size={28} />
+          {active && scene?.type === "video" ? (
+            <Play size={22} />
+          ) : (
+            <Waves size={22} />
+          )}
         </div>
         <div>
-          <h2>{active ? scene?.name : "Ready when you are"}</h2>
+          <h2>{active ? scene?.name : "Show stopped"}</h2>
           <p>
             {active
-              ? `${surface?.name} · ${scene?.type === "color" ? "Solid color" : scene?.type === "video" ? "Native video" : "Image"}`
-              : "Start the show to play the planned queue."}
+              ? `${surface?.name} · ${scene?.type === "color" ? "Solid color" : scene?.type === "video" ? "Video" : "Image"}`
+              : "Ambient content remains on. Start show plays the queue; Blackout hides all output."}
           </p>
         </div>
         <div className="remaining">
@@ -164,7 +169,12 @@ function CurrentCue({ project, status }: { project: Project; status: Status }) {
           )}
           s
         </span>
-        <span>{Math.round(status.opacity * 100)}% opacity</span>
+        <span>
+          {status.current?.manual
+            ? "Manual cue · returns to queue"
+            : "Automatic cue"}{" "}
+          · {Math.round(status.opacity * 100)}% opacity
+        </span>
       </div>
     </section>
   );
@@ -178,9 +188,11 @@ function Queue({ project, status }: { project: Project; status: Status }) {
           <Columns3 size={16} />
           <h2>Up next</h2>
         </div>
-        <span className="badge">Shuffle bag</span>
+        <span className="badge">Automatic</span>
       </div>
-      <p className="queue-intro">The next places light will land.</p>
+      <p className="queue-intro">
+        Planned order · one foreground cue at a time.
+      </p>
       <ol className="queue">
         {status.queue.map((cue, index) => {
           const scene = project.scenes.find((s) => s.id === cue.scene_id);
@@ -214,7 +226,7 @@ function Queue({ project, status }: { project: Project; status: Status }) {
       <div className="queue-foot">
         <RotateCcw size={14} />
         <span>
-          Each eligible item once per bag.
+          Each eligible item plays once before reshuffling.
           <br />
           No immediate repeats when possible.
         </span>
@@ -226,15 +238,61 @@ function Queue({ project, status }: { project: Project; status: Status }) {
 export default function App() {
   const engine = useEngine();
   const { project, status, connected, error, busy } = engine;
-  const [page, setPage] = useState("Runtime");
+  const [page, setPage] = useState(
+    () => sessionStorage.getItem("projection-page") || "Playback",
+  );
+  const [mappingDirty, setMappingDirty] = useState(false);
+  const [destination, setDestination] = useState<string | null>(null);
+  const [mappingSurface, setMappingSurface] = useState<string | undefined>();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [page]);
+  function navigate(next: string) {
+    if (page === "Mapping" && mappingDirty && next !== page)
+      setDestination(next);
+    else {
+      setPage(next);
+      sessionStorage.setItem("projection-page", next);
+    }
+  }
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if (
+        event.code !== "Space" ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !connected ||
+        busy ||
+        !status ||
+        status.blackout ||
+        document.querySelector("dialog[open]") ||
+        (event.target instanceof Element &&
+          event.target.closest(
+            "input,textarea,select,button,a,[contenteditable=true]",
+          ))
+      )
+        return;
+      event.preventDefault();
+      void engine.command(
+        status.transport === "RUNNING"
+          ? "pause"
+          : status.transport === "PAUSED"
+            ? "resume"
+            : "start",
+      );
+    }
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, [connected, busy, status, engine.command]);
   const [auth, setAuth] = useState("");
   const disabled = busy || !connected;
   const running = status?.transport === "RUNNING";
   const live =
     connected && status?.renderer.status === "LIVE" && !status.blackout;
   const nav = [
-    { name: "Dashboard", icon: Gauge },
-    { name: "Runtime", icon: Radio },
+    { name: "Playback", icon: Radio },
     { name: "Mapping", icon: Layers },
     { name: "Media", icon: Monitor },
     { name: "Project", icon: Settings2 },
@@ -248,7 +306,7 @@ export default function App() {
           href="#"
           onClick={(e) => {
             e.preventDefault();
-            setPage("Dashboard");
+            navigate("Playback");
           }}
         >
           <span className="brand-mark">
@@ -258,14 +316,14 @@ export default function App() {
             Projection<span className="brand-sub">SHOW ENGINE</span>
           </span>
         </a>
-        <div className="workspace-label">WORKSPACE</div>
+
         <nav aria-label="Primary navigation">
           {nav.map(({ name, icon: Icon }) => (
             <button
               key={name}
               aria-current={page === name ? "page" : undefined}
               className={page === name ? "nav-active" : ""}
-              onClick={() => setPage(name)}
+              onClick={() => navigate(name)}
             >
               <Icon size={18} />
               {name}
@@ -281,17 +339,11 @@ export default function App() {
             {connected ? "Connected locally" : "Reconnecting"}
           </span>
         </div>
-        <div className="sidebar-bottom">
-          <span className="prototype">DEV</span>
-          <div>
-            Mapping & media<span>Native output · Local control</span>
-          </div>
-        </div>
       </aside>
       <main>
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <ChevronRight size={14} />
+            Project <ChevronRight size={14} />
             <span>{project?.name ?? "Projection Show Engine"}</span>
           </div>
           <span className="connection">
@@ -302,20 +354,17 @@ export default function App() {
         <div className="page-content">
           <div className="page-heading">
             <div>
-              <div className="eyebrow">CONTROL ROOM</div>
-              <h1>{page === "Project" ? "Your installation" : page}</h1>
+              <h1>{page}</h1>
               <p>
-                {page === "Runtime"
-                  ? "A little light. Exactly where it belongs."
-                  : page === "Dashboard"
-                    ? "Your installation, at a glance."
-                    : page === "Project"
-                      ? "Geometry, sources, and show behavior in one reusable definition."
-                      : page === "Mapping"
-                        ? "Place every corner. See the change on your output."
-                        : page === "Media"
-                          ? "Local sources, ready for the surfaces you choose."
-                          : "Measured state from the running engine."}
+                {page === "Playback"
+                  ? "Current output and automatic queue. Space to pause or resume."
+                  : page === "Project"
+                    ? "Outputs, surfaces, and automatic show settings."
+                    : page === "Mapping"
+                      ? "Align each surface with the projector output."
+                      : page === "Media"
+                        ? "Select a file to inspect it. Play on surface sends it to the output."
+                        : "Output tests, decoder status, and recent activity."}
               </p>
             </div>
             <span
@@ -328,7 +377,11 @@ export default function App() {
                   ? "BLACKOUT"
                   : status?.renderer.status !== "LIVE"
                     ? "NO OUTPUT"
-                    : status?.state}
+                    : status?.transport === "READY"
+                      ? "Show stopped"
+                      : status?.transport === "PAUSED"
+                        ? "Paused"
+                        : "Playing"}
             </span>
           </div>
           {error && (
@@ -373,16 +426,30 @@ export default function App() {
           )}
           {project && status && (
             <>
-              {status.warnings.length > 0 && (
+              {status.warnings.filter(
+                (w) => !w.startsWith("Test pattern active:"),
+              ).length > 0 && (
                 <div className="notice warning" role="status">
-                  {status.warnings.join(" · ")}
+                  {status.warnings
+                    .filter((w) => !w.startsWith("Test pattern active:"))
+                    .join(" · ")}
                 </div>
               )}
               <section className="transport" aria-label="Show controls">
+                <span className="transport-state">
+                  {status.blackout
+                    ? "Output black"
+                    : status.transport === "READY"
+                      ? "Show stopped"
+                      : status.transport === "PAUSED"
+                        ? "Paused"
+                        : "Playing"}
+                </span>
                 <div className="transport-primary">
                   <button
                     className="primary"
-                    disabled={disabled}
+                    disabled={disabled || status.blackout}
+                    title="Space: start, pause, or resume the show"
                     onClick={() =>
                       void engine.command(
                         running
@@ -401,25 +468,34 @@ export default function App() {
                         : "Start show"}
                   </button>
                   <button
-                    disabled={disabled || status.transport === "READY"}
+                    disabled={
+                      disabled ||
+                      status.transport === "READY" ||
+                      status.blackout
+                    }
                     onClick={() => void engine.command("skip")}
                   >
                     <SkipForward size={16} />
-                    Skip
+                    Next
                   </button>
                   <button
-                    disabled={disabled || status.transport === "READY"}
+                    disabled={
+                      disabled ||
+                      status.transport === "READY" ||
+                      status.blackout
+                    }
                     onClick={() => void engine.command("fade-out")}
                   >
                     <Waves size={16} />
-                    Fade out
+                    Fade to next
                   </button>
                   <button
                     disabled={disabled || status.transport === "READY"}
+                    title="Clear the cue and reset the queue. Ambient content remains visible."
                     onClick={() => void engine.command("stop")}
                   >
                     <CircleStop size={16} />
-                    Stop
+                    Stop show
                   </button>
                 </div>
                 <button
@@ -435,16 +511,46 @@ export default function App() {
                   {status.blackout ? "Restore output" : "Blackout"}
                 </button>
               </section>
-              <div hidden={page !== "Runtime"}>
+              {status.blackout && (
+                <div className="notice error" role="status">
+                  <strong>Blackout active.</strong> All output is black and
+                  playback is frozen. Restore output returns to{" "}
+                  {status.transport === "READY"
+                    ? "the stopped show"
+                    : status.transport.toLowerCase() + " playback"}
+                  .
+                </div>
+              )}
+              {status.pattern !== "show" && (
+                <div className="notice" role="status">
+                  <span>
+                    <strong>{words(status.pattern)} test pattern.</strong>{" "}
+                    Replaces the show image while cues continue.
+                  </span>
+                  <button
+                    disabled={disabled}
+                    onClick={() => void engine.pattern("show")}
+                  >
+                    Return to content
+                  </button>
+                </div>
+              )}
+              {status.calibration && page !== "Mapping" && (
+                <div className="notice" role="status">
+                  Calibration is active in another session. Finish it before
+                  saving project settings.
+                </div>
+              )}
+              <div hidden={page !== "Playback"}>
                 <div className="runtime-layout">
                   <div className="main-column">
+                    <CurrentCue project={project} status={status} />
                     <Output
                       project={project}
                       status={status}
                       connected={connected}
-                      visible={page === "Runtime"}
+                      visible={page === "Playback"}
                     />
-                    <CurrentCue project={project} status={status} />
                   </div>
                   <Queue project={project} status={status} />
                 </div>
@@ -455,7 +561,9 @@ export default function App() {
                       <span className="count">{project.surfaces.length}</span>
                     </h2>
                     <span className="subtle">
-                      <span className="small-dot" /> Ambient stays in motion
+                      {status.blackout || status.transport === "PAUSED"
+                        ? "Ambient paused"
+                        : "Background content on enabled surfaces"}
                     </span>
                   </div>
                   <div className="surface-cards">
@@ -474,7 +582,12 @@ export default function App() {
                         (a) => a.id === surface.ambient_profile,
                       );
                       return (
-                        <div
+                        <button
+                          title={`Map ${surface.name}`}
+                          onClick={() => {
+                            setMappingSurface(surface.id);
+                            navigate("Mapping");
+                          }}
                           className={`surface-card ${active ? "active" : ""}`}
                           key={surface.id}
                         >
@@ -500,68 +613,24 @@ export default function App() {
                                       ? ambient.name
                                       : "Black"}
                           </span>
-                        </div>
+                          <span className="surface-action">Map surface →</span>
+                        </button>
                       );
                     })}
                   </div>
                 </section>
               </div>
-              <div hidden={page !== "Dashboard"}>
-                <div className="stat-grid">
-                  {[
-                    {
-                      label: "Projectors",
-                      value: project.projectors.length,
-                      detail: "Configured viewports",
-                    },
-                    {
-                      label: "Surfaces",
-                      value: project.surfaces.filter((s) => s.enabled).length,
-                      detail: "Enabled mapping planes",
-                    },
-                    {
-                      label: "Scenes",
-                      value: project.scenes.length,
-                      detail: "Color, image & video sources",
-                    },
-                    {
-                      label: "Show time",
-                      value: clock(status.show_time),
-                      detail: "Excludes pause and blackout",
-                    },
-                  ].map((stat) => (
-                    <section className="panel stat" key={stat.label}>
-                      <span>{stat.label}</span>
-                      <strong>{stat.value}</strong>
-                      <small>{stat.detail}</small>
-                    </section>
-                  ))}
-                </div>
-                <Output
-                  project={project}
-                  status={status}
-                  connected={connected}
-                  visible={page === "Dashboard"}
-                />
-                <div className="dashboard-links">
-                  <button onClick={() => setPage("Runtime")}>
-                    <Radio size={17} /> Open runtime <ArrowUpRight size={16} />
-                  </button>
-                  <button onClick={() => setPage("Project")}>
-                    <Layers size={17} /> Configure project{" "}
-                    <ArrowUpRight size={16} />
-                  </button>
-                </div>
-              </div>
               {page === "Mapping" && (
                 <MappingPage
                   project={project}
+                  initialSurface={mappingSurface}
+                  onDirtyChange={setMappingDirty}
                   revision={engine.revision}
                   reload={engine.load}
                   connected={connected}
                 />
               )}
-              {page === "Media" && (
+              <div hidden={page !== "Media"}>
                 <MediaPage
                   project={project}
                   status={status}
@@ -569,11 +638,15 @@ export default function App() {
                   reload={engine.load}
                   save={engine.save}
                 />
-              )}
+              </div>
               <div hidden={page !== "Project"}>
                 <ProjectEditor
                   project={project}
-                  canSave={status.transport === "READY" && connected}
+                  canSave={
+                    status.transport === "READY" &&
+                    connected &&
+                    !status.calibration
+                  }
                   save={engine.save}
                 />
               </div>
@@ -605,8 +678,8 @@ export default function App() {
                 <section className="panel form-panel">
                   <h3>Test the mapping</h3>
                   <p>
-                    Patterns replace surface content; blackout always takes
-                    priority. These controls affect the native output.
+                    These patterns replace all mapped content. Cues continue in
+                    the background; pause first to hold your place.
                   </p>
                   <div className="patterns">
                     {["show", "grid", "white", "color", "border"].map(
@@ -617,7 +690,7 @@ export default function App() {
                             status.pattern === pattern ? "selected" : ""
                           }
                           key={pattern}
-                          disabled={disabled}
+                          disabled={disabled || !!status.calibration}
                           onClick={() => void engine.pattern(pattern)}
                         >
                           {pattern === "show" ? (
@@ -625,7 +698,9 @@ export default function App() {
                           ) : (
                             <Circle size={15} />
                           )}{" "}
-                          {pattern[0].toUpperCase() + pattern.slice(1)}
+                          {pattern === "show"
+                            ? "Show content"
+                            : pattern[0].toUpperCase() + pattern.slice(1)}
                         </button>
                       ),
                     )}
@@ -661,10 +736,24 @@ export default function App() {
                   </div>
                 </section>
               </div>
+              <DiscardDialog
+                open={destination !== null}
+                title="Leave unsaved mapping?"
+                description="The projected preview will revert to the last saved corners. Stay here to save your mapping first."
+                onKeep={() => setDestination(null)}
+                onDiscard={() => {
+                  if (destination) {
+                    setPage(destination);
+                    sessionStorage.setItem("projection-page", destination);
+                  }
+                  setMappingDirty(false);
+                  setDestination(null);
+                }}
+              />
               <footer>
                 <span>
                   <i className="dot green" />
-                  All configuration stays on this device.
+                  Local engine · No cloud connection required
                 </span>
                 <span>
                   Projection Show Engine{" "}

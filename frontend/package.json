@@ -7,8 +7,9 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "format": "prettier --write src vite.config.ts index.html package.json tsconfig.json",
-    "format:check": "prettier --check src vite.config.ts index.html package.json tsconfig.json"
+    "format": "prettier --write src vite.config.ts index.html package.json tsconfig.json playwright.config.ts tests",
+    "format:check": "prettier --check src vite.config.ts index.html package.json tsconfig.json playwright.config.ts tests",
+    "test:ui": "npm run build && playwright test"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -16,6 +17,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.7.0",

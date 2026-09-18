@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Save } from "lucide-react";
+import { useUnsavedWarning } from "./editing";
 import { request } from "./api";
 import type { Project } from "./types";
 
@@ -13,16 +14,25 @@ export function ProjectEditor({
   save: (p: Project) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(project);
+  const [base, setBase] = useState(project);
   const [raw, setRaw] = useState(JSON.stringify(project, null, 2));
   const [advanced, setAdvanced] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    setDraft(project);
-    setRaw(JSON.stringify(project, null, 2));
+    if (
+      raw === JSON.stringify(base, null, 2) ||
+      raw === JSON.stringify(project, null, 2)
+    ) {
+      setDraft(project);
+      setBase(project);
+      setRaw(JSON.stringify(project, null, 2));
+    }
   }, [project]);
-  const dirty = raw !== JSON.stringify(project, null, 2);
+  const dirty = raw !== JSON.stringify(base, null, 2);
+  const conflict = dirty && JSON.stringify(base) !== JSON.stringify(project);
+  useUnsavedWarning(dirty);
   function update(next: Project) {
     setDraft(next);
     setRaw(JSON.stringify(next, null, 2));
@@ -46,7 +56,10 @@ export function ProjectEditor({
       <div className="section-heading">
         <div>
           <h2>Project configuration</h2>
-          <p>One project file. Any number of outputs and surfaces.</p>
+          <p>
+            Changes are applied together. The running show keeps using the saved
+            project until you save.
+          </p>
         </div>
         <span className="badge">
           {dirty ? "Unsaved changes" : "Saved on disk"}
@@ -54,8 +67,14 @@ export function ProjectEditor({
       </div>
       {!canSave && (
         <div className="notice">
-          Stop the show before applying configuration. Your edits stay here
-          while you use the runtime controls.
+          Stop show and finish any active mapping session before saving. Your
+          draft stays here when you switch pages.
+        </div>
+      )}
+      {conflict && (
+        <div role="alert" className="notice error">
+          The project changed while you were editing. Discard edits to load the
+          current version before saving.
         </div>
       )}
       <section className="panel form-panel">
@@ -95,10 +114,25 @@ export function ProjectEditor({
         </p>
       </section>
       <section className="panel form-panel">
-        <h3>Show timing</h3>
+        <h3>Automatic playback</h3>
+        <label className="check-label">
+          <input
+            type="checkbox"
+            checked={draft.show.auto_start}
+            disabled={advanced}
+            onChange={(e) =>
+              update({
+                ...draft,
+                show: { ...draft.show, auto_start: e.target.checked },
+              })
+            }
+          />
+          Start show when the application launches
+        </label>
         <p>
-          Visit every eligible surface and scene once before reshuffling,
-          avoiding immediate repeats when possible.
+          Each eligible surface and scene plays once before reshuffling. Hold
+          time applies to colors, images, and timed videos. Full-clip videos use
+          their own duration. Gap is the ambient-only interval between cues.
         </p>
         <div className="fields">
           {(["fade_in_seconds", "fade_out_seconds"] as const).map((key) => (
@@ -152,8 +186,8 @@ export function ProjectEditor({
           <div>
             <h3>Projectors, surfaces & sources</h3>
             <p>
-              Prototype editor · normalized corners are relative to each
-              projector.
+              Rename, enable, and size your outputs here. Use Mapping for corner
+              alignment and Media for playback settings.
             </p>
           </div>
           <button
@@ -177,7 +211,7 @@ export function ProjectEditor({
               } else setAdvanced(true);
             }}
           >
-            {advanced ? "Close editor" : "Edit project JSON"}
+            {advanced ? "Validate & close JSON" : "Advanced JSON"}
           </button>
         </div>
         {advanced ? (
@@ -194,29 +228,183 @@ export function ProjectEditor({
             />
           </label>
         ) : (
-          <div className="inventory">
-            {project.projectors.map((p) => (
-              <div key={p.id}>
-                <strong>{p.name}</strong>
-                <span>
-                  {p.viewport.width} × {p.viewport.height} at {p.viewport.x},{" "}
-                  {p.viewport.y}
-                </span>
-                <small>
-                  {
-                    project.surfaces.filter((s) => s.projector_id === p.id)
-                      .length
-                  }{" "}
-                  surfaces
-                </small>
-              </div>
-            ))}
+          <div className="topology-editor">
+            <details>
+              <summary>Projectors · {draft.projectors.length}</summary>
+              <p className="hint">
+                Viewports are rectangles within the output canvas. Edit X/Y to
+                position them; overlapping viewports are allowed.
+              </p>
+              {draft.projectors.map((p, index) => (
+                <fieldset className="topology-row" key={p.id}>
+                  <legend>{p.name}</legend>
+                  <div className="fields">
+                    <label>
+                      Projector name
+                      <input
+                        value={p.name}
+                        onChange={(e) =>
+                          update({
+                            ...draft,
+                            projectors: draft.projectors.map((v, i) =>
+                              i === index ? { ...v, name: e.target.value } : v,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        checked={p.enabled}
+                        onChange={(e) =>
+                          update({
+                            ...draft,
+                            projectors: draft.projectors.map((v, i) =>
+                              i === index
+                                ? { ...v, enabled: e.target.checked }
+                                : v,
+                            ),
+                          })
+                        }
+                      />
+                      Enabled
+                    </label>
+                    {(["x", "y", "width", "height"] as const).map((key) => (
+                      <label key={key}>
+                        {key[0].toUpperCase() + key.slice(1)} (pixels)
+                        <input
+                          type="number"
+                          min={key === "width" || key === "height" ? 16 : 0}
+                          value={p.viewport[key]}
+                          onChange={(e) =>
+                            update({
+                              ...draft,
+                              projectors: draft.projectors.map((v, i) =>
+                                i === index
+                                  ? {
+                                      ...v,
+                                      viewport: {
+                                        ...v.viewport,
+                                        [key]: Number(e.target.value),
+                                      },
+                                    }
+                                  : v,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ))}
+            </details>
+            <details>
+              <summary>Surfaces · {draft.surfaces.length}</summary>
+              <p className="hint">
+                A surface is a mapped shape on a projector. Disabling foreground
+                excludes it from the queue while keeping its background.
+              </p>
+              {draft.surfaces.map((surface, index) => {
+                const change = (value: Partial<typeof surface>) =>
+                  update({
+                    ...draft,
+                    surfaces: draft.surfaces.map((v, i) =>
+                      i === index ? { ...v, ...value } : v,
+                    ),
+                  });
+                return (
+                  <fieldset className="topology-row" key={surface.id}>
+                    <legend>{surface.name}</legend>
+                    <div className="fields">
+                      <label>
+                        Surface name
+                        <input
+                          value={surface.name}
+                          onChange={(e) => change({ name: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Projector
+                        <select
+                          value={surface.projector_id}
+                          onChange={(e) =>
+                            change({ projector_id: e.target.value })
+                          }
+                        >
+                          {draft.projectors.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Background
+                        <select
+                          value={surface.ambient_profile ?? ""}
+                          onChange={(e) =>
+                            change({ ambient_profile: e.target.value || null })
+                          }
+                        >
+                          <option value="">None</option>
+                          {draft.ambient_profiles.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="check-label">
+                        <input
+                          type="checkbox"
+                          checked={surface.enabled}
+                          onChange={(e) =>
+                            change({ enabled: e.target.checked })
+                          }
+                        />
+                        Enabled
+                      </label>
+                      <label className="check-label">
+                        <input
+                          type="checkbox"
+                          checked={surface.foreground_enabled}
+                          onChange={(e) =>
+                            change({ foreground_enabled: e.target.checked })
+                          }
+                        />
+                        Allow foreground cues
+                      </label>
+                      {(["width", "height"] as const).map((key) => (
+                        <label key={key}>
+                          Content {key} (pixels)
+                          <input
+                            type="number"
+                            min={16}
+                            value={surface.logical[key]}
+                            onChange={(e) =>
+                              change({
+                                logical: {
+                                  ...surface.logical,
+                                  [key]: Number(e.target.value),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                );
+              })}
+            </details>
           </div>
         )}
         <p className="hint">
-          Add, remove, rename, or disable entries in the project definition. IDs
-          remain stable; names are editable. Save validates all geometry and
-          references before replacing the file.
+          Advanced JSON exposes the complete project, including adding or
+          removing entries, tags, and background profiles. IDs stay stable when
+          you rename an item. All changes are validated before saving.
         </p>
       </section>
       {error && (
@@ -230,21 +418,22 @@ export function ProjectEditor({
           {message}
         </div>
       )}
-      <div className="editor-actions">
+      <div className="editor-actions project-savebar">
         <button
           onClick={() => {
             setDraft(project);
+            setBase(project);
             setRaw(JSON.stringify(project, null, 2));
             setMessage("");
             setError("");
           }}
           disabled={!dirty}
         >
-          Revert edits
+          Discard edits
         </button>
         <button
           className="primary"
-          disabled={!dirty || !canSave || saving}
+          disabled={!dirty || !canSave || saving || conflict}
           onClick={() => void commit()}
         >
           <Save size={16} />

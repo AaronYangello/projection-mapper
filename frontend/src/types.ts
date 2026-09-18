@@ -58,6 +58,7 @@ export type Project = {
   };
 };
 export type Cue = {
+  manual?: boolean;
   id: number;
   surface_id: string;
   scene_id: string;
@@ -95,6 +96,7 @@ export type Status = {
       decoded_frames?: number;
     };
   };
+  calibration: { surface_id: string; dirty: boolean } | null;
   revision: number;
   clients: number;
   uptime: number;

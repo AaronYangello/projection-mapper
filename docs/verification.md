@@ -129,3 +129,15 @@ The optional sample has pinned download verification and source/license attribut
 and generated thumbnails/evidence are ignored by Git. Missing sample media leaves the demo
 runnable with color scenes. Remaining work includes the physical Pi pipeline, extended soak,
 appliance startup, playlists, dedicated topology forms, and media preparation/upload tooling.
+
+## Operator UX review · 2026-09-18
+
+The [research and review](ux-research-and-review.md) documents the navigation, mapping,
+media, draft protection, and project-form changes with primary research sources.
+`RUN_GPU_TESTS=1 .venv/bin/pytest -q` passes all **63 tests**, including six real GPU tests.
+`cd frontend && npm run test:ui` passes **11 browser workflow tests** and builds production assets.
+Native review used a separate copied project; the user's project configuration was preserved.
+All five pages were checked at desktop, tablet, and phone widths in the supported dark theme.
+Ruff, frontend formatting, and diff checks pass. The main app remains running with its prior
+stopped transport and blackout state. Existing topology now has form controls; adding/removing
+entries still uses the complete JSON editor. Physical Pi/LAN validation remains outstanding.

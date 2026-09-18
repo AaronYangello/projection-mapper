@@ -5,15 +5,17 @@ native output while the show runs; calibration does not restart the current cue.
 
 1. Drag any numbered corner. The editor accepts mouse, pen, and touch pointer events.
 2. With a corner focused, use arrow keys for one projector pixel; Shift+arrow moves ten pixels.
-   Numeric X/Y fields accept normalized coordinates for precise placement.
+   Tap-to-nudge controls offer the same 1/10 px steps. Expand Exact coordinates for X/Y
+   values normalized to 0–1. Editor zoom enlarges the canvas without changing projection.
 3. Use Grid, White, Border, or Show to inspect alignment. Grid includes the surface and
    projector names, logical resolution, corner numbers, border, and center crosshair.
 4. **Black other surfaces** isolates the selected surface. Global blackout still overrides it.
-5. **Undo** steps back through local edits; **Reset rectangle** previews the full projector.
+5. **Undo/Redo** steps through local edits; **Reset to inset rectangle** previews a
+   rectangle spanning 10%–90% of the projector.
    **Revert** restores the most recently saved geometry.
 6. **Save mapping** writes only the selected geometry, keeping the current show and decoder
-   running. **Finish mapping** returns to normal output; **Discard & finish** drops unsaved
-   edits. Leaving this page also ends the preview.
+   running. **Finish mapping** returns to normal output. Dirty edits prompt you to keep editing
+   or discard; leaving this page uses the same protection and ends the preview.
 
 Corners are normalized within a projector: `[0,0]` is top-left, `[1,1]` is bottom-right.
 Order is TL, TR, BR, BL; keep the quadrilateral convex and clockwise. Geometry is rejected if
@@ -34,8 +36,8 @@ measured at 90 ms on the development Mac; this is not a Pi or LAN latency guaran
 2 fps browser image is an inspection capture, not the live mapping update frequency.
 
 Full project edits are blocked during a mapping session. Projector viewport, surface count,
-and logical resolution changes remain available through the stopped Project editor. Dedicated
-projector/surface CRUD forms and projector-wide identification are future work. Current test
+and logical resolution changes remain available through the stopped Project editor. Add/remove
+projector/surface forms and projector-wide identification are future work. Current test
 patterns cover mapped surfaces; unused canvas pixels remain black.
 
 Do not assume external video-wall output order or treat the demo corners as measured screen

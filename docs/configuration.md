@@ -49,7 +49,8 @@ values have an upper bound of one hour. This milestone supports exactly one fore
 4. Press Start show. A restart reconstructs state from the same YAML. Transient queue position
    is intentionally not persisted.
 
-The advanced editor can change counts, geometry, ambient settings, source definitions, and
+Projector and surface forms handle names, enabled state, viewports, sizes, assignments, and
+background selection. The advanced editor can also change counts, geometry, ambient settings, source definitions, and
 selectors. Closing it validates without saving. Invalid edits stay visible for correction.
 Revert edits reloads the currently loaded project; Diagnostics → Reload saved project reads
 external disk changes while stopped. Another client's intervening save yields a conflict,

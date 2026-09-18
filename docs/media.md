@@ -25,12 +25,13 @@ requires a download or an internet connection.
 1. Copy a file into `projects/<your-project>/media/`. Supported video extensions are `.mp4`,
    `.m4v`, `.mov`, `.mkv`, `.webm`, `.avi`; images are `.png`, `.jpg`, `.jpeg`, `.webp`.
    Actual codec support depends on the installed FFmpeg build.
-2. Stop the show, open Media, and choose **Scan media**. Cards show inspected dimensions,
+2. Stop the show, open Media, and choose **Scan folder**. Cards show inspected dimensions,
    frame rate, duration, codec, thumbnail, and any errors. Scanning is explicit.
 3. **Add to show** persists a reusable scene definition. Choose an enabled foreground surface
-   and **Play now** to interrupt the current cue; automatic queued playback resumes afterward.
-4. While stopped, edit that scene's fit, focal point, clip range, and playback settings, then
-   save. These are project settings, not per-browser player settings.
+   and **Play on surface** to interrupt the current cue; automatic queued playback resumes afterward.
+4. While stopped, edit the display name, enabled state, tags, and that scene's fit, focal point, clip range, and playback settings, then
+   save. Search matches names, paths, and tags; type filters also include Needs attention.
+   Drafts stay in place when changing pages. These are project settings, not per-browser player settings.
 
 Fit modes are **cover** (crop), **contain** (black bars), **stretch**, and **native** (one source
 pixel per logical surface pixel). Focal points in [0,1] choose the crop center; letterboxing

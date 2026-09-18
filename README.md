@@ -36,14 +36,13 @@ See [media playback and sample credits](docs/media.md).
 
 ## Controls
 
-- **Runtime:** start, pause/resume, skip, fade out, stop, blackout, restore; current cue and
+- **Playback:** start, pause/resume, skip, fade out, stop, blackout, restore; current cue and
   six planned cues; GPU preview, actual FPS, and per-surface state.
-- **Dashboard:** installation inventory and live output.
-- **Mapping:** drag or nudge corners during playback, isolate a surface with labeled patterns,
-  undo, revert, and save geometry without restarting the cue.
-- **Media:** inspect files and thumbnails, add reusable scenes, configure fit/clip timing, and
-  play a source immediately on a selected surface.
-- **Project:** canvas and timing forms, plus a validated JSON editor for the complete project.
+- **Mapping:** drag, zoom, or tap to nudge corners during playback, isolate a surface with labeled patterns,
+  undo/redo, revert, and save geometry without restarting the cue.
+- **Media:** search files and thumbnails, add reusable scenes, edit names/tags and fit/clip timing,
+  and play a saved source on a selected surface. Selection alone never changes output.
+- **Project:** canvas, timing, projector, and surface forms, plus a validated JSON editor for the complete project.
   Stop the show before saving. Saves are atomic, retain a `.yaml.bak`, and reject stale edits.
 - **Diagnostics:** grid, white, color, and border test patterns; renderer telemetry and recent
   activity. Choose **Show** to leave test mode. Blackout overrides every test pattern.
@@ -63,6 +62,7 @@ RUN_GPU_TESTS=1 .venv/bin/pytest -q -m gpu
 cd frontend
 npm run build
 npm run format:check
+npm run test:ui # disposable local project; requires Google Chrome
 ```
 
 GPU tests need display-server access even though their window is hidden. Opted-in GPU tests
@@ -85,6 +85,7 @@ are not Pi performance claims. See [verification](docs/verification.md).
 ## Documentation
 
 - [Desktop development](docs/desktop-development.md)
+- [UX research and review](docs/ux-research-and-review.md)
 - [Architecture and decisions](docs/architecture.md)
 - [Project configuration](docs/configuration.md)
 - [Mapping and calibration](docs/mapping.md)

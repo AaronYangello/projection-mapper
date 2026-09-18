@@ -17,3 +17,6 @@ projects/*/media/*.mp4
 projects/*/media/*.mov
 projects/*/media/*.mkv
 projects/*/media/*.webm
+
+frontend/test-results/
+frontend/playwright-report/

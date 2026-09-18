@@ -21,7 +21,16 @@ export async function request<T>(
     try {
       const detail = JSON.parse(body).detail;
       throw new Error(
-        typeof detail === "string" ? detail : JSON.stringify(detail),
+        typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail
+                .map(
+                  (issue: { loc?: (string | number)[]; msg?: string }) =>
+                    `${issue.loc?.filter((part) => part !== "body" && part !== "project").join(" → ") ?? "Configuration"}: ${issue.msg ?? "Invalid value"}`,
+                )
+                .join("; ")
+            : JSON.stringify(detail),
       );
     } catch (error) {
       if (error instanceof SyntaxError)
