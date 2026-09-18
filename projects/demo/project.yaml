@@ -1,0 +1,291 @@
+schema_version: 1
+id: demo
+name: Seven planes
+description: A configurable study in light, motion, and perspective. Prototype Zero.
+canvas:
+  width: 3840
+  height: 2160
+  refresh_rate: 60
+  fullscreen: false
+  monitor: 0
+projectors:
+- id: output-1
+  name: Projector A
+  enabled: true
+  viewport:
+    x: 0
+    y: 0
+    width: 1920
+    height: 1080
+- id: output-2
+  name: Projector B
+  enabled: true
+  viewport:
+    x: 1920
+    y: 0
+    width: 1920
+    height: 1080
+- id: output-3
+  name: Projector C
+  enabled: true
+  viewport:
+    x: 0
+    y: 1080
+    width: 1920
+    height: 1080
+- id: output-4
+  name: Projector D
+  enabled: true
+  viewport:
+    x: 1920
+    y: 1080
+    width: 1920
+    height: 1080
+surfaces:
+- id: plane-1
+  name: Plane 01
+  enabled: true
+  projector_id: output-1
+  logical:
+    width: 1080
+    height: 1080
+  mapping:
+    top_left:
+    - 0.07
+    - 0.13
+    top_right:
+    - 0.44
+    - 0.09
+    bottom_right:
+    - 0.46
+    - 0.86
+    bottom_left:
+    - 0.09
+    - 0.9
+  tags:
+  - demo
+  ambient_profile: drift
+  foreground_enabled: true
+- id: plane-2
+  name: Plane 02
+  enabled: true
+  projector_id: output-1
+  logical:
+    width: 1080
+    height: 1080
+  mapping:
+    top_left:
+    - 0.55
+    - 0.17
+    top_right:
+    - 0.92
+    - 0.12
+    bottom_right:
+    - 0.91
+    - 0.9
+    bottom_left:
+    - 0.54
+    - 0.84
+  tags:
+  - demo
+  ambient_profile: drift
+  foreground_enabled: true
+- id: plane-3
+  name: Plane 03
+  enabled: true
+  projector_id: output-2
+  logical:
+    width: 1080
+    height: 1080
+  mapping:
+    top_left:
+    - 0.08
+    - 0.17
+    top_right:
+    - 0.45
+    - 0.1
+    bottom_right:
+    - 0.44
+    - 0.86
+    bottom_left:
+    - 0.07
+    - 0.91
+  tags:
+  - demo
+  ambient_profile: drift
+  foreground_enabled: true
+- id: plane-4
+  name: Plane 04
+  enabled: true
+  projector_id: output-2
+  logical:
+    width: 1080
+    height: 1080
+  mapping:
+    top_left:
+    - 0.56
+    - 0.1
+    top_right:
+    - 0.91
+    - 0.18
+    bottom_right:
+    - 0.94
+    - 0.88
+    bottom_left:
+    - 0.53
+    - 0.87
+  tags:
+  - demo
+  ambient_profile: drift
+  foreground_enabled: true
+- id: plane-5
+  name: Plane 05
+  enabled: true
+  projector_id: output-3
+  logical:
+    width: 1080
+    height: 1080
+  mapping:
+    top_left:
+    - 0.07
+    - 0.12
+    top_right:
+    - 0.45
+    - 0.17
+    bottom_right:
+    - 0.44
+    - 0.91
+    bottom_left:
+    - 0.09
+    - 0.85
+  tags:
+  - demo
+  ambient_profile: drift
+  foreground_enabled: true
+- id: plane-6
+  name: Plane 06
+  enabled: true
+  projector_id: output-3
+  logical:
+    width: 1080
+    height: 1080
+  mapping:
+    top_left:
+    - 0.55
+    - 0.19
+    top_right:
+    - 0.91
+    - 0.11
+    bottom_right:
+    - 0.93
+    - 0.84
+    bottom_left:
+    - 0.55
+    - 0.91
+  tags:
+  - demo
+  ambient_profile: drift
+  foreground_enabled: true
+- id: plane-7
+  name: Plane 07
+  enabled: true
+  projector_id: output-4
+  logical:
+    width: 1080
+    height: 1080
+  mapping:
+    top_left:
+    - 0.27
+    - 0.12
+    top_right:
+    - 0.68
+    - 0.17
+    bottom_right:
+    - 0.72
+    - 0.87
+    bottom_left:
+    - 0.25
+    - 0.9
+  tags:
+  - demo
+  ambient_profile: drift
+  foreground_enabled: true
+ambient_profiles:
+- id: drift
+  name: Quiet particles
+  enabled: true
+  type: particles
+  color: '#a4d7df'
+  opacity: 0.5
+  count: 160
+  speed: 0.045
+  size: 6.0
+  drift: 0.014
+  seed: 28
+  foreground_opacity: 0.12
+scenes:
+- id: tidal
+  name: Tidal blue
+  enabled: true
+  type: color
+  color: '#4d9bb5'
+  tags: []
+- id: amber
+  name: Warm amber
+  enabled: true
+  type: color
+  color: '#d5a263'
+  tags: []
+- id: sage
+  name: Soft sage
+  enabled: true
+  type: color
+  color: '#89ac94'
+  tags: []
+- id: violet
+  name: Dusk violet
+  enabled: true
+  type: color
+  color: '#998eaf'
+  tags: []
+- id: coral
+  name: Muted coral
+  enabled: true
+  type: color
+  color: '#c98879'
+  tags: []
+- id: asset-2b99d27b7f59f11a
+  name: sintel-trailer
+  enabled: true
+  path: media/sintel-trailer.mp4
+  tags: []
+  fit: cover
+  focal_point:
+  - 0.5
+  - 0.5
+  type: video
+  playback: full_clip
+  end_behavior: hold
+  start_seconds: 0.0
+  end_seconds: null
+show:
+  mode: shuffle_bag
+  max_simultaneous: 1
+  auto_start: true
+  fade_in_seconds: 2.5
+  hold_seconds:
+    min: 5.0
+    max: 8.0
+  fade_out_seconds: 3.0
+  gap_seconds:
+    min: 0.5
+    max: 2.0
+  queue_length: 6
+  seed: 42
+  surfaces:
+    include_tags:
+    - demo
+    exclude_tags: []
+  scenes:
+    include_tags: []
+    exclude_tags: []
