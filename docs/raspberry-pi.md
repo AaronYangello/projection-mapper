@@ -88,8 +88,7 @@ diagnostic without changing native output or projector topology. Diagnostics and
 emit render, present, total-frame, preview-readback, preview-encode, preview-age and skip metrics.
 
 ```sh
-.venv/bin/projection-show run --project projects/installation/project.yaml \
-  --role appliance --data-root appliance-data --graphics-backend gles --fullscreen
+scripts/run-pi-appliance.sh
 ```
 
 Configure bearer authentication in the launch environment without committing or logging
