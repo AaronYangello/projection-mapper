@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from projection_show.api import create_app
 from projection_show.build.compiler import compile_show, plan, video_args
+from projection_show.build.profile import get_profile
 from projection_show.config.store import ProjectStore
 from projection_show.runtime import RenderBridge, Runtime
 from projection_show.services import Services
@@ -69,7 +70,14 @@ def test_cache_recovers_and_shell_metacharacters_are_literal(compiled_project):
     (root / source.path).rename(root / strange)
     source.path = strange
     build_plan = plan(p, root, encoder="libx264")
-    args = video_args(p, root, build_plan["atlas"], "libx264", root / "out.mp4")
+    args = video_args(
+        p,
+        root,
+        build_plan["atlas"],
+        get_profile("pi4-1080p"),
+        "libx264",
+        root / "out.mp4",
+    )
     assert str(root / strange) in args
     compile_show(p, root, out, encoder="libx264")
     assert not (root / "INJECTED").exists()

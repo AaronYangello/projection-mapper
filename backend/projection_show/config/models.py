@@ -32,6 +32,8 @@ class Canvas(Model):
     refresh_rate: int = Field(default=60, ge=1, le=240)
     fullscreen: bool = False
     monitor: int = Field(default=0, ge=0)
+    preview_fps: float = Field(default=1, ge=0, le=10, allow_inf_nan=False)
+    preview_width: int = Field(default=480, ge=160, le=1920)
 
 
 class Viewport(Model):

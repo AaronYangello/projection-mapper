@@ -8,6 +8,8 @@ from pydantic import ValidationError
 
 def test_demo_is_data_not_topology(demo):
     assert demo.canvas.width == 3840
+    assert demo.canvas.preview_fps == 1
+    assert demo.canvas.preview_width == 480
     assert len(demo.surfaces) == 7
     data = demo.model_dump()
     data["canvas"] = {"width": 1200, "height": 600}

@@ -58,6 +58,10 @@ export function BuildDeploy({
     active: string | null;
   } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const buildProfile =
+    project.canvas.width === 3840 && project.canvas.height === 2160
+      ? "pi5-4k30"
+      : "pi4-1080p";
   const active = !!job && ["queued", "running"].includes(job.state);
   const stopped = status.transport === "READY" && !status.calibration;
   useEffect(() => {
@@ -108,7 +112,7 @@ export function BuildDeploy({
     const result = await follow(
       await request<Job>("builds", {
         method: "POST",
-        body: JSON.stringify({ revision, profile: "pi4-1080p" }),
+        body: JSON.stringify({ revision, profile: buildProfile }),
       }),
     );
     setLatest(result);
@@ -179,9 +183,10 @@ export function BuildDeploy({
         <section className="panel form-panel">
           <h2>Build on this Mac</h2>
           <p>
-            pi4-1080p · one 1920×1080 H.264 atlas at 30 fps, up to four
+            {buildProfile} · one 1920×1080 H.264 atlas at 30 fps, up to four
             concurrent media surfaces, sixteen lights, and one stereo audio
-            program.
+            program. The Pi 5 profile preserves the configured 3840×2160 canvas
+            and its projector viewports.
           </p>
           {!capabilities.compiler && (
             <p className="notice">{capabilities.compiler_reason}</p>

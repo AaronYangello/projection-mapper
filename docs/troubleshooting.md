@@ -48,11 +48,14 @@ is separate from the intentionally slow browser preview image rate.
 Rebuild/update the frontend and reload. Uploads and timeline IDs now use `getRandomValues`
 when needed. The server still chooses installation names and validates every uploaded file.
 
-**Low FPS.** Read actual FPS in Playback/Diagnostics. Preview is intentionally only 2 fps and
-can cost some GPU readback time. Test a smaller canvas or fewer/lower-resolution surfaces;
-observe actual behavior on the target GPU. Late frames count native loop work exceeding 1.5×
-the target budget; they are not a decoder drop count. Shuffle/raw source preview is CPU-decoded. Compiled playback reports its actual decoder;
-inspect pipeline state/PTS/stale/dropped frames and the output-mode/profile workload.
+**Low FPS.** Read actual FPS and the stage timings in Diagnostics. Browser preview defaults to
+480 pixels wide at 1 fps; its GPU readback remains on the render thread, while JPEG encoding is
+bounded and asynchronous. Temporarily set `canvas.preview_fps: 0` for a clean comparison, then
+reduce preview rate or width before reducing the 4K output canvas. Late frames count native loop
+work exceeding 1.5× the target budget; `late_frames_interval` makes the current trend visible.
+Preview capture/skip, readback, encoding and age metrics distinguish its cost from render and
+present time. Shuffle/raw source preview is CPU-decoded. Compiled playback reports its actual
+decoder; inspect pipeline state/PTS/stale/dropped frames and the output-mode/profile workload.
 
 **Tests warn about Starlette/httpx deprecations.** The current dependency set passes integration
 tests but emits upstream TestClient deprecation warnings. These are recorded in verification;
@@ -86,10 +89,10 @@ clip interval and light role. Missing media intervals draw no content; opacity i
 Set visible/dark replaces the curve. A key's interpolation controls the interval leaving it.
 At a non-loop end, media ends while lights retain their end values. Stop darkens all tracks.
 
-**Build rejects the demo.** The original generic demo is 4K/multi-projector; `pi4-1080p`
-requires 1920×1080, one full-canvas projector, four concurrent media clips and sixteen lights.
-Create a compatible authoring project; do not distort the reusable engine to fit the profile.
-The synthetic fixture generator supplies a compatible test installation.
+**Build rejects the demo.** Select `pi5-4k30` for a 3840×2160 project with up to four
+projector viewports. `pi4-1080p` requires 1920×1080 and one full-canvas projector. Both allow
+four concurrent media clips and sixteen lights. The synthetic fixture generator supplies a
+compatible Pi 4 test installation.
 
 **Encoder unavailable or slow.** Read the actual backend/warning in the build result. Auto
 tries VideoToolbox on Mac and reports a software fallback. Explicit hardware mode fails if

@@ -16,14 +16,42 @@ class Profile:
     lighting_surfaces: int = 16
     compiled_clips: int = 1024
 
+    @property
+    def canvas_size(self) -> tuple[int, int]:
+        return self.width, self.height
+
+    @property
+    def max_projectors(self) -> int:
+        return 1
+
+
+@dataclass(frozen=True)
+class Pi5Profile(Profile):
+    """4K installation canvas with a separately bounded 1080p decode atlas."""
+
+    name: str = "pi5-4k30"
+    canvas_width: int = 3840
+    canvas_height: int = 2160
+
+    @property
+    def canvas_size(self) -> tuple[int, int]:
+        return self.canvas_width, self.canvas_height
+
+    @property
+    def max_projectors(self) -> int:
+        return 4
+
 
 PI4 = Profile()
+PI5_4K = Pi5Profile()
+PROFILES = {profile.name: profile for profile in (PI4, PI5_4K)}
 
 
 def get_profile(name):
-    if name != PI4.name:
-        raise ValueError("Unknown build profile; available: pi4-1080p")
-    return PI4
+    try:
+        return PROFILES[name]
+    except KeyError as exc:
+        raise ValueError("Unknown build profile; available: " + ", ".join(PROFILES)) from exc
 
 
 def layout(project: Project, profile=PI4):
@@ -80,18 +108,26 @@ def layout(project: Project, profile=PI4):
     }
 
 
+def validate_destination(project: Project, profile=PI4):
+    canvas_width, canvas_height = profile.canvas_size
+    if project.canvas.width != canvas_width or project.canvas.height != canvas_height:
+        raise ValueError(f"{profile.name} requires a {canvas_width}×{canvas_height} output canvas")
+    enabled = [p for p in project.projectors if p.enabled]
+    if profile.max_projectors == 1:
+        if len(enabled) != 1 or enabled[0].viewport.model_dump() != dict(
+            x=0, y=0, width=canvas_width, height=canvas_height
+        ):
+            raise ValueError(f"{profile.name} requires one full-canvas enabled projector")
+    elif not 1 <= len(enabled) <= profile.max_projectors:
+        raise ValueError(
+            f"{profile.name} requires between one and {profile.max_projectors} enabled projectors"
+        )
+
+
 def validate_profile(project: Project, profile=PI4):
     if project.show.mode != "timeline":
         raise ValueError("Build requires the saved Timeline mode; stop and choose Use this mode")
-    if project.canvas.width != profile.width or project.canvas.height != profile.height:
-        raise ValueError(
-            f"{profile.name} requires a {profile.width}×{profile.height} output canvas"
-        )
-    enabled = [p for p in project.projectors if p.enabled]
-    if len(enabled) != 1 or enabled[0].viewport.model_dump() != dict(
-        x=0, y=0, width=profile.width, height=profile.height
-    ):
-        raise ValueError(f"{profile.name} requires one full-canvas enabled projector")
+    validate_destination(project, profile)
     surfaces = {s.id: s for s in project.surfaces}
     lights = [t for t in project.show.timeline.tracks if surfaces[t.surface_id].role == "lighting"]
     if len(lights) > profile.lighting_surfaces:
@@ -99,7 +135,11 @@ def validate_profile(project: Project, profile=PI4):
             f"{profile.name} permits at most {profile.lighting_surfaces} lighting tracks"
         )
     atlas = layout(project, profile)
-    warnings = ["Pi 4 graphics, decode, HDMI audio and thermal qualification remain unverified."]
+    warnings = (
+        ["Pi 5 compiled decode, HDMI audio and sustained thermal qualification remain open."]
+        if profile.name == PI5_4K.name
+        else ["Pi 4 graphics, decode, HDMI audio and thermal qualification remain unverified."]
+    )
     if project.canvas.refresh_rate != profile.fps:
         warnings.append(
             "Bundle playback targets 30 fps; the destination display refresh is configured locally."

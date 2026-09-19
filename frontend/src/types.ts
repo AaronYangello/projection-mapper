@@ -25,6 +25,8 @@ export type Project = {
     refresh_rate: number;
     fullscreen: boolean;
     monitor: number;
+    preview_fps: number;
+    preview_width: number;
   };
   projectors: (Named & { viewport: Viewport })[];
   surfaces: Surface[];
@@ -130,6 +132,36 @@ export type Status = {
       error: string | null;
       pts?: number;
       decoded_frames?: number;
+    };
+    performance?: {
+      target_fps: number;
+      frame_budget_ms: number;
+      sample_frames: number;
+      late_frames_interval: number;
+      render_avg_ms: number;
+      render_max_ms: number;
+      present_avg_ms: number;
+      present_max_ms: number;
+      frame_avg_ms: number;
+      frame_max_ms: number;
+      preview: {
+        enabled: boolean;
+        configured_fps: number;
+        resolution: [number, number] | null;
+        captures_interval: number;
+        skipped_interval: number;
+        readback_avg_ms: number;
+        readback_max_ms: number;
+        encoder: {
+          submitted_total: number;
+          encoded_total: number;
+          dropped_total: number;
+          pending: boolean;
+          encoding: boolean;
+          last_encode_ms: number;
+          last_age_ms: number;
+        };
+      };
     };
   };
   calibration: { surface_id: string; dirty: boolean } | null;

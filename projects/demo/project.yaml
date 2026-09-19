@@ -8,6 +8,8 @@ canvas:
   refresh_rate: 60
   fullscreen: false
   monitor: 0
+  preview_fps: 1.0
+  preview_width: 480
 projectors:
 - id: output-1
   name: Projector A

@@ -52,7 +52,8 @@ function Output({
   visible: boolean;
 }) {
   const live = visible && connected && status.renderer.status === "LIVE";
-  const preview = usePreview(live);
+  const previewEnabled = live && project.canvas.preview_fps > 0;
+  const preview = usePreview(previewEnabled, project.canvas.preview_fps || 1);
   return (
     <section className="panel output-panel">
       <div className="panel-heading">
@@ -74,7 +75,11 @@ function Output({
           <div className="output-empty">
             <Monitor size={32} />
             <strong>
-              {live ? "Receiving GPU preview…" : "Native output unavailable"}
+              {previewEnabled
+                ? "Receiving GPU preview…"
+                : live
+                  ? "Live preview disabled"
+                  : "Native output unavailable"}
             </strong>
             <span>The scheduler and controls remain accessible.</span>
           </div>
@@ -92,7 +97,10 @@ function Output({
           {live ? "Native GPU output" : "Renderer offline"}
         </span>
         <span>
-          Preview at 2 fps · output {status.renderer.fps.toFixed(1)} fps
+          {project.canvas.preview_fps > 0
+            ? `Preview at ${project.canvas.preview_fps} fps · ${project.canvas.preview_width}px wide`
+            : "Preview disabled"}{" "}
+          · output {status.renderer.fps.toFixed(1)} fps
         </span>
       </div>
     </section>
@@ -723,6 +731,50 @@ export default function App() {
                 />
               </div>
               <div hidden={page !== "Diagnostics"}>
+                {status.renderer.performance && (
+                  <section className="panel form-panel">
+                    <h3>Renderer performance</h3>
+                    <dl className="build-details">
+                      <div className="diagnostic-item">
+                        <dt>Frame time</dt>
+                        <dd>
+                          {status.renderer.performance.frame_avg_ms} ms average
+                          · {status.renderer.performance.frame_max_ms} ms max
+                        </dd>
+                      </div>
+                      <div className="diagnostic-item">
+                        <dt>Render / present</dt>
+                        <dd>
+                          {status.renderer.performance.render_avg_ms} /{" "}
+                          {status.renderer.performance.present_avg_ms} ms
+                          average
+                        </dd>
+                      </div>
+                      <div className="diagnostic-item">
+                        <dt>Preview readback</dt>
+                        <dd>
+                          {status.renderer.performance.preview.enabled
+                            ? `${status.renderer.performance.preview.readback_avg_ms} ms average at ${status.renderer.performance.preview.resolution?.join("×")}`
+                            : "Disabled"}
+                        </dd>
+                      </div>
+                      <div className="diagnostic-item">
+                        <dt>Preview encoder</dt>
+                        <dd>
+                          {status.renderer.performance.preview.enabled
+                            ? `${status.renderer.performance.preview.encoder.last_encode_ms} ms encode · ${status.renderer.performance.preview.encoder.last_age_ms} ms age · ${status.renderer.performance.preview.skipped_interval} skipped this interval`
+                            : "No work scheduled"}
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="subtle">
+                      Target {status.renderer.performance.target_fps} fps ·{" "}
+                      {status.renderer.performance.frame_budget_ms} ms budget ·{" "}
+                      {status.renderer.performance.late_frames_interval} late in
+                      the latest sample
+                    </p>
+                  </section>
+                )}
                 {status.renderer.timeline_clock && (
                   <section className="panel form-panel">
                     <h3>Native playback pipeline</h3>

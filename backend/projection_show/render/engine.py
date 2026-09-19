@@ -1,6 +1,5 @@
 """One logical FBO per surface, projective warp into one master output FBO."""
 
-import io
 import time
 import zlib
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from . import shaders
 from .context import create_context, graphics_report
 from .labels import calibration_label
 from .media import MediaPlayback
+from .preview import PreviewEncoder, encode_preview
 from .timeline import TimelineRenderer
 
 
@@ -27,6 +27,74 @@ class Target:
     def release(self):
         self.framebuffer.release()
         self.texture.release()
+
+
+@dataclass
+class RenderMetrics:
+    frames: int = 0
+    late_frames: int = 0
+    render_ms: float = 0
+    render_max_ms: float = 0
+    present_ms: float = 0
+    present_max_ms: float = 0
+    frame_ms: float = 0
+    frame_max_ms: float = 0
+    preview_readback_ms: float = 0
+    preview_readback_max_ms: float = 0
+    preview_captures: int = 0
+    preview_skipped: int = 0
+
+    def record(
+        self,
+        *,
+        render_ms: float,
+        present_ms: float,
+        frame_ms: float,
+        preview_readback_ms: float,
+        late: bool,
+        preview_captured: bool,
+        preview_skipped: bool,
+    ) -> None:
+        self.frames += 1
+        self.late_frames += int(late)
+        self.render_ms += render_ms
+        self.render_max_ms = max(self.render_max_ms, render_ms)
+        self.present_ms += present_ms
+        self.present_max_ms = max(self.present_max_ms, present_ms)
+        self.frame_ms += frame_ms
+        self.frame_max_ms = max(self.frame_max_ms, frame_ms)
+        if preview_captured:
+            self.preview_captures += 1
+            self.preview_readback_ms += preview_readback_ms
+            self.preview_readback_max_ms = max(self.preview_readback_max_ms, preview_readback_ms)
+        self.preview_skipped += int(preview_skipped)
+
+    def snapshot(self, canvas: dict, preview_size: tuple[int, int] | None, encoder) -> dict:
+        frames = max(1, self.frames)
+        captures = max(1, self.preview_captures)
+        target = canvas["refresh_rate"]
+        return {
+            "target_fps": target,
+            "frame_budget_ms": round(1000 / target, 2),
+            "sample_frames": self.frames,
+            "late_frames_interval": self.late_frames,
+            "render_avg_ms": round(self.render_ms / frames, 2),
+            "render_max_ms": round(self.render_max_ms, 2),
+            "present_avg_ms": round(self.present_ms / frames, 2),
+            "present_max_ms": round(self.present_max_ms, 2),
+            "frame_avg_ms": round(self.frame_ms / frames, 2),
+            "frame_max_ms": round(self.frame_max_ms, 2),
+            "preview": {
+                "enabled": canvas["preview_fps"] > 0,
+                "configured_fps": canvas["preview_fps"],
+                "resolution": list(preview_size) if preview_size else None,
+                "captures_interval": self.preview_captures,
+                "skipped_interval": self.preview_skipped,
+                "readback_avg_ms": round(self.preview_readback_ms / captures, 2),
+                "readback_max_ms": round(self.preview_readback_max_ms, 2),
+                "encoder": encoder.snapshot(),
+            },
+        }
 
 
 class Engine:
@@ -80,10 +148,11 @@ class Engine:
         self.release_targets()
         canvas = project["canvas"]
         self.master = self.target(canvas["width"], canvas["height"])
-        thumb_w = min(960, canvas["width"])
-        self.thumbnail = self.target(
-            thumb_w, max(1, round(thumb_w * canvas["height"] / canvas["width"]))
-        )
+        if canvas["preview_fps"] > 0:
+            thumb_w = min(canvas["preview_width"], canvas["width"])
+            self.thumbnail = self.target(
+                thumb_w, max(1, round(thumb_w * canvas["height"] / canvas["width"]))
+            )
         profiles = {a["id"]: a for a in project["ambient_profiles"]}
         for surface in project["surfaces"]:
             if not surface["enabled"]:
@@ -271,13 +340,14 @@ class Engine:
         ).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
     def jpeg(self) -> bytes:
+        size, pixels = self.preview_frame()
+        return encode_preview(size, pixels)
+
+    def preview_frame(self) -> tuple[tuple[int, int], bytes]:
+        if not self.thumbnail:
+            raise RuntimeError("Preview capture is disabled")
         self.blit(self.thumbnail.framebuffer, self.thumbnail.framebuffer.size)
-        image = Image.frombytes(
-            "RGB", self.thumbnail.framebuffer.size, self.thumbnail.framebuffer.read(components=3)
-        )
-        stream = io.BytesIO()
-        image.transpose(Image.Transpose.FLIP_TOP_BOTTOM).save(stream, "JPEG", quality=80)
-        return stream.getvalue()
+        return self.thumbnail.framebuffer.size, self.thumbnail.framebuffer.read(components=3)
 
     def release_targets(self):
         if self.label_texture:
@@ -319,10 +389,12 @@ def run_renderer(
         visible=visible, fullscreen=fullscreen, monitor=monitor, backend=graphics_backend
     )
     engine = Engine(ctx)
+    encoder = PreviewEncoder(bridge.preview)
     start = sample = time.monotonic()
     next_frame = start
     last_preview = 0
     frames = late = 0
+    metrics = RenderMetrics()
     reported_geometry = -1
     try:
         while not stop.is_set() and not glfw.window_should_close(window):
@@ -335,6 +407,7 @@ def run_renderer(
             frame = bridge.read()
             if frame:
                 engine.render(frame)
+                rendered = time.monotonic()
                 if frame.get("timeline"):
                     bridge.report(timeline_clock=dict(engine.timeline.health))
                 if reported_geometry != engine.geometry_revision:
@@ -344,15 +417,37 @@ def run_renderer(
                 if size[0] and size[1]:
                     engine.blit(ctx.screen, size)
                     glfw.swap_buffers(window)
-                if began - last_preview >= 0.5:
-                    bridge.preview(engine.jpeg())
+                presented = time.monotonic()
+                preview_readback_ms = 0.0
+                preview_captured = preview_skipped = False
+                canvas = frame["project"]["canvas"]
+                preview_fps = canvas["preview_fps"]
+                if preview_fps > 0 and began - last_preview >= 1 / preview_fps:
                     last_preview = began
+                    if encoder.can_accept():
+                        preview_started = time.monotonic()
+                        preview_size, preview_pixels = engine.preview_frame()
+                        preview_readback_ms = (time.monotonic() - preview_started) * 1000
+                        preview_captured = encoder.submit(preview_size, preview_pixels)
+                        preview_skipped = not preview_captured
+                    else:
+                        preview_skipped = True
+                finished = time.monotonic()
                 frames += 1
-                target = 1 / frame["project"]["canvas"]["refresh_rate"]
-                elapsed = time.monotonic() - began
-                late += int(elapsed > target * 1.5)
-                if began - sample >= 1:
-                    canvas = frame["project"]["canvas"]
+                target = 1 / canvas["refresh_rate"]
+                elapsed = finished - began
+                is_late = elapsed > target * 1.5
+                late += int(is_late)
+                metrics.record(
+                    render_ms=(rendered - began) * 1000,
+                    present_ms=(presented - rendered) * 1000,
+                    frame_ms=elapsed * 1000,
+                    preview_readback_ms=preview_readback_ms,
+                    late=is_late,
+                    preview_captured=preview_captured,
+                    preview_skipped=preview_skipped,
+                )
+                if finished - sample >= 1:
                     warning = None
                     if fullscreen and size != (canvas["width"], canvas["height"]):
                         warning = (
@@ -373,8 +468,14 @@ def run_renderer(
                             if frame.get("timeline")
                             else engine.playback.health
                         ),
+                        performance=metrics.snapshot(
+                            canvas,
+                            engine.thumbnail.framebuffer.size if engine.thumbnail else None,
+                            encoder,
+                        ),
                     )
-                    frames, sample = 0, began
+                    frames, sample = 0, finished
+                    metrics = RenderMetrics()
                 # Accumulate a deadline so timer oversleep doesn't lower the requested frame rate.
                 next_frame += target
                 now = time.monotonic()
@@ -385,6 +486,7 @@ def run_renderer(
                 time.sleep(0.01)
     finally:
         engine.close()
+        encoder.close()
         ctx.release()
         glfw.destroy_window(window)
         glfw.terminate()

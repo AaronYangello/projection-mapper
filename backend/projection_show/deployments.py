@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .build.compiler import key, validate_playback
-from .build.profile import PI4, validate_profile
+from .build.profile import get_profile, validate_destination, validate_profile
 from .config.models import LogicalSize, Surface
 from .config.store import atomic_write
 from .config.timeline import Timeline
@@ -66,7 +66,8 @@ def _read_validated(directory: Path, project):
         ):
             raise ValueError(f"Deployment checksum failed: {name}")
     m = BundleManifest.model_validate_json((directory / "bundle.json").read_text()).model_dump()
-    if m["profile"] != asdict(PI4):
+    profile = get_profile(m["profile"]["name"])
+    if m["profile"] != asdict(profile):
         raise ValueError("Unsupported or modified deployment profile")
     if m["id"] != key([m["video_key"], m["audio_key"], m["metadata_key"]])[:32]:
         raise ValueError("Deployment identity does not match build keys")
@@ -110,13 +111,7 @@ def _read_validated(directory: Path, project):
             errors.append("Incompatible role/logical dimensions: " + s.id)
     if errors:
         raise ValueError("; ".join(errors))
-    if project.canvas.width != 1920 or project.canvas.height != 1080:
-        raise ValueError("Destination canvas must be 1920×1080")
-    enabled = [p for p in project.projectors if p.enabled]
-    if len(enabled) != 1 or enabled[0].viewport.model_dump() != dict(
-        x=0, y=0, width=1920, height=1080
-    ):
-        raise ValueError("Destination requires one full-canvas projector for pi4-1080p")
+    validate_destination(project, profile)
     specifications = {}
     for definition in automation["surfaces"]:
         if set(definition) != {"id", "role", "shape", "light", "logical"}:
@@ -130,16 +125,16 @@ def _read_validated(directory: Path, project):
         specifications[sid] = definition
     if set(specifications) != set(ids):
         raise ValueError("Missing surface metadata")
-    if sum(s["role"] == "lighting" for s in specifications.values()) > 16:
+    if sum(s["role"] == "lighting" for s in specifications.values()) > profile.lighting_surfaces:
         raise ValueError("Too many lighting surfaces for profile")
     if (
         set(atlas) != {"schema_version", "width", "height", "regions"}
         or atlas["schema_version"] != 1
-        or (atlas["width"], atlas["height"]) != (1920, 1080)
+        or (atlas["width"], atlas["height"]) != (profile.width, profile.height)
     ):
         raise ValueError("Unsupported atlas schema")
     clips = {c.id: (t, c) for t in timeline.tracks for c in t.clips}
-    if len(atlas["regions"]) > PI4.compiled_clips:
+    if len(atlas["regions"]) > profile.compiled_clips:
         raise ValueError("Bundle exceeds the profile's compiled clip validation budget")
     seen = set()
     for r in atlas["regions"]:
@@ -164,7 +159,7 @@ def _read_validated(directory: Path, project):
             or c.start_seconds + c.duration_seconds != r["end_seconds"]
         ):
             raise ValueError("Atlas clip timing/surface mismatch")
-        if type(r["slot"]) is not int or not 0 <= r["slot"] < 4:
+        if type(r["slot"]) is not int or not 0 <= r["slot"] < profile.media_slots:
             raise ValueError("Invalid atlas slot")
         if len(r["rect"]) != 4 or any(type(v) is not int for v in r["rect"]):
             raise ValueError("Invalid atlas rectangle")
@@ -172,17 +167,23 @@ def _read_validated(directory: Path, project):
         if (
             min(x, y) < 0
             or min(w, h) <= 0
-            or x + w > 1920
-            or y + h > 1080
-            or r["uv"] != [x / 1920, y / 1080, w / 1920, h / 1080]
+            or x + w > profile.width
+            or y + h > profile.height
+            or r["uv"]
+            != [
+                x / profile.width,
+                y / profile.height,
+                w / profile.width,
+                h / profile.height,
+            ]
         ):
             raise ValueError("Invalid atlas UV/rectangle")
     if seen != set(clips):
         raise ValueError("Missing atlas clips")
-    expected = validate_profile(bind_deployment(project, automation), PI4)["atlas"]
+    expected = validate_profile(bind_deployment(project, automation), profile)["atlas"]
     if atlas != expected:
         raise ValueError("Atlas layout does not match deterministic profile packing")
-    validate_playback(directory / "playback.mp4", PI4, m["duration_seconds"], m["has_audio"])
+    validate_playback(directory / "playback.mp4", profile, m["duration_seconds"], m["has_audio"])
     extras = sorted(set(local) - set(ids))
     return {
         "manifest": m,

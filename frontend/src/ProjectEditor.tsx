@@ -112,6 +112,51 @@ export function ProjectEditor({
           them within its bounds. Fullscreen and monitor changes take effect on
           the next application launch.
         </p>
+        <div className="fields">
+          <label>
+            Browser preview rate (fps)
+            <input
+              type="number"
+              min="0"
+              max="10"
+              step="0.25"
+              disabled={advanced}
+              value={draft.canvas.preview_fps}
+              onChange={(e) =>
+                update({
+                  ...draft,
+                  canvas: {
+                    ...draft.canvas,
+                    preview_fps: Number(e.target.value),
+                  },
+                })
+              }
+            />
+          </label>
+          <label>
+            Browser preview width (px)
+            <input
+              type="number"
+              min="160"
+              max="1920"
+              disabled={advanced}
+              value={draft.canvas.preview_width}
+              onChange={(e) =>
+                update({
+                  ...draft,
+                  canvas: {
+                    ...draft.canvas,
+                    preview_width: Number(e.target.value),
+                  },
+                })
+              }
+            />
+          </label>
+        </div>
+        <p className="hint">
+          Preview is downscaled and encoded in the background. Set its rate to 0
+          to disable capture without changing the native output.
+        </p>
       </section>
       <section className="panel form-panel">
         <h3>Automatic playback</h3>

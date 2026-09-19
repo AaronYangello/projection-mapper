@@ -22,7 +22,7 @@ from .target import deploy, test_connection
 
 class BuildRequest(BaseModel):
     revision: int
-    profile: Literal["pi4-1080p"] = "pi4-1080p"
+    profile: Literal["pi4-1080p", "pi5-4k30"] = "pi4-1080p"
     encoder: Literal["auto", "libx264", "h264_videotoolbox"] = "auto"
 
 

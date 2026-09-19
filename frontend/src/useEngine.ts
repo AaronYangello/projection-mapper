@@ -106,7 +106,7 @@ export function useEngine() {
   };
 }
 
-export function usePreview(live: boolean) {
+export function usePreview(live: boolean, fps: number) {
   const [url, setUrl] = useState("");
   useEffect(() => {
     if (!live) {
@@ -133,7 +133,7 @@ export function usePreview(live: boolean) {
       } catch {
         if (!stopped) setUrl("");
       }
-      if (!stopped) timer = setTimeout(refresh, 500);
+      if (!stopped) timer = setTimeout(refresh, Math.max(250, 1000 / fps));
     }
     void refresh();
     return () => {
@@ -142,6 +142,6 @@ export function usePreview(live: boolean) {
       clearTimeout(timer);
       if (previous) URL.revokeObjectURL(previous);
     };
-  }, [live]);
+  }, [fps, live]);
   return url;
 }

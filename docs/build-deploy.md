@@ -15,7 +15,7 @@ On the Mac:
 brew install gstreamer pygobject3
 .venv/bin/python -m pip install '.[appliance]'
 .venv/bin/projection-show build --project projects/my-show/project.yaml \
-  --profile pi4-1080p --output projects/my-show/builds/my-show.pshow
+  --profile pi5-4k30 --output projects/my-show/builds/my-show.pshow
 ```
 
 The compiler uses system FFmpeg if present, otherwise the binary from the `compiler`
@@ -38,11 +38,18 @@ in the [Pi guide](raspberry-pi.md).
 
 ## Profile, cache and artifacts
 
+`pi5-4k30` v1 preserves a 3840×2160 logical output canvas with up to four configured
+projector viewports while compiling media into a separate 1920×1080/30 atlas. It supports
+at most four concurrent media clips, sixteen lighting tracks, one audio program, and 1024
+compiled clips. The current installation uses four 1920×1080 quadrants; the external video
+wall controller splits the single 4K HDMI signal, and deployment never rewrites those local
+viewports or their calibrated mappings.
+
 `pi4-1080p` v1 requires a 1920×1080 canvas, one enabled full-canvas projector, 30 fps,
 at most four concurrent media clips, sixteen lighting tracks, one audio program, and
-1024 compiled clips (a compiler resource budget). More than four total media surfaces can
-share slots when their intervals do not overlap. Generic projects are not limited to these
-counts. Use another profile for another installation; only this profile currently ships.
+1024 compiled clips. More than four total media surfaces can share slots when their intervals
+do not overlap. Generic projects are not limited to these counts. In both profiles, atlas
+dimensions constrain decoded media, not the physical output canvas.
 
 Packing is deterministic by start time, surface ID and clip ID. Reusable slots form a
 1×1, 2×1 or 2×2 grid. Atlas gaps are black. Output is H.264 High/4.1, yuv420p, 30 fps,

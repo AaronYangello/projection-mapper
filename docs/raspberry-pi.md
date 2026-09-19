@@ -1,9 +1,14 @@
-# Raspberry Pi 4 appliance: provisional setup
+# Raspberry Pi appliance setup and measured Pi 5 baseline
 
-**No physical Pi was available for v0.3 verification.** These are researched setup choices,
-not a qualified image or performance claim. The target is one 1920×1080 output at 30 fps,
-one H.264 atlas decoder, up to four simultaneous media surfaces, sixteen lights, and HDMI
-audio. Generic engine/project topology remains independent of that build profile.
+The current physical installation is a Raspberry Pi 5 driving one 3840×2160 HDMI signal at
+30 Hz into an external video-wall controller. The engine retains one 4K logical canvas with
+four 1920×1080 viewports; the controller distributes those quadrants to four projectors.
+The `pi5-4k30` build profile therefore constrains decoded media to one 1920×1080 H.264 atlas
+without shrinking or rearranging the output canvas. It supports four simultaneous media
+slots, sixteen lights, and HDMI audio.
+
+The Pi 4 / `pi4-1080p` path remains provisional and targets one 1920×1080 output at 30 fps.
+Generic engine/project topology remains independent of either build profile.
 
 Use **64-bit Raspberry Pi OS Desktop (Trixie)** provisionally. The official OS guide lists
 Pi 4 support; BCM2711 documentation lists GLES 3.0 and H.264 1080p60 capability. Neither
@@ -40,7 +45,8 @@ an OS binary package or prepare a matching arm64 wheel elsewhere. Do not copy th
 virtual environment or its lock to the Pi. The application itself changes no OS packages,
 boot services, display configuration or system audio routes.
 
-In the real desktop session, set HDMI to 1920×1080 and the intended refresh rate. Collect:
+In the real desktop session, set HDMI to the profile's output size and intended refresh rate.
+For the Pi 5 video-wall installation that is 3840×2160 at 30 Hz. Collect:
 
 ```sh
 .venv/bin/projection-show graphics-report --graphics-backend gles --fullscreen
@@ -59,10 +65,27 @@ cannot pass native output acceptance.
 
 ## Installation-local configuration and audio
 
-Prepare a destination project with a 1920×1080 canvas, full-canvas projector and matching
-stable surface IDs, roles and logical sizes. Calibrate **on the Pi**. Authoring physical
-corners are never applied by a show bundle. Set `show.auto_start` only after supervised
-playback/restart checks. Fullscreen uses the monitor's current mode.
+Prepare a destination project matching the selected profile and stable surface IDs, roles and
+logical sizes. For `pi5-4k30`, retain the 3840×2160 canvas and the four installation-local
+1920×1080 viewports. Calibrate **on the Pi**. Authoring physical corners are never applied by
+a show bundle. Set `show.auto_start` only after supervised playback/restart checks. Fullscreen
+uses the monitor's current mode.
+
+For live browser preview on Pi 5, begin with:
+
+```yaml
+canvas:
+  width: 3840
+  height: 2160
+  refresh_rate: 30
+  preview_fps: 1
+  preview_width: 480
+```
+
+Preview downscaling and GPU readback occur only at the configured rate. JPEG encoding runs on
+a bounded background worker so browser work cannot accumulate. Set `preview_fps: 0` for an A/B
+diagnostic without changing native output or projector topology. Diagnostics and `/api/status`
+emit render, present, total-frame, preview-readback, preview-encode, preview-age and skip metrics.
 
 ```sh
 .venv/bin/projection-show run --project projects/installation/project.yaml \

@@ -5,7 +5,7 @@ import av
 import numpy as np
 import pytest
 from projection_show.build.compiler import change_kind, compile_show, plan
-from projection_show.build.profile import layout, validate_profile
+from projection_show.build.profile import PI5_4K, layout, validate_profile
 from projection_show.config.models import Project
 from projection_show.storage import StorageLimits, extract_bundle
 
@@ -63,6 +63,30 @@ def test_profile_slot_reuse_and_limits(compiled_project):
         validate_profile(Project.model_validate(data))
     t["clips"][0].update(start_seconds=0, duration_seconds=0.5)
     assert len({r["slot"] for r in layout(Project.model_validate(data))["regions"]}) == 4
+
+
+def test_pi5_profile_preserves_4k_canvas_and_uses_1080p_atlas(compiled_project):
+    project, _ = compiled_project
+    data = project.model_dump(mode="json")
+    data["canvas"].update(width=3840, height=2160, refresh_rate=30)
+    template = data["projectors"][0]
+    data["projectors"] = []
+    for index, (x, y) in enumerate(((0, 0), (1920, 0), (0, 1080), (1920, 1080))):
+        data["projectors"].append(
+            {
+                **copy.deepcopy(template),
+                "id": f"output-{index + 1}",
+                "viewport": {"x": x, "y": y, "width": 1920, "height": 1080},
+            }
+        )
+    for index, surface in enumerate(data["surfaces"]):
+        surface["projector_id"] = data["projectors"][index]["id"]
+    project = Project.model_validate(data)
+    result = validate_profile(project, PI5_4K)
+    assert result["profile"]["canvas_width"] == 3840
+    assert result["profile"]["canvas_height"] == 2160
+    assert result["atlas"]["width"] == 1920
+    assert result["atlas"]["height"] == 1080
 
 
 def test_cancel_failure_keep_output(compiled_project, monkeypatch):

@@ -10,7 +10,7 @@ retains the old valid file as `.yaml.bak`. No implicit disk rewrite occurs.
 | Field | Meaning |
 | --- | --- |
 | `id`, `name`, `description` | Stable project ID, editable display name, description |
-| `canvas` | Width/height, refresh rate, fullscreen preference, zero-based monitor index |
+| `canvas` | Width/height, refresh rate, fullscreen preference, zero-based monitor index, browser-preview rate and width |
 | `projectors[]` | Stable ID/name, enabled flag, integer-pixel viewport within the canvas |
 | `surfaces[]` | Projector ID, logical dimensions, normalized mapping, enabled/foreground flags, tags, ambient profile, media/lighting role, shape and fixed light color |
 | `ambient_profiles[]` | `none`, `solid`, or `particles`; color, opacity, count, speed, size, drift, seed, foreground dimming |
@@ -61,6 +61,10 @@ Revert edits reloads the currently loaded project; Diagnostics → Reload saved 
 external disk changes while stopped. Another client's intervening save yields a conflict,
 not a silent overwrite. Refresh to load the latest revision before reapplying your changes.
 Fullscreen/monitor changes require relaunch; canvas geometry and refresh rate apply on save.
+`canvas.preview_fps` is independently configurable from 0 (disabled) through 10, and
+`canvas.preview_width` is 160–1920 pixels. These settings affect only the downscaled browser
+preview; they never resize the master output canvas or projector viewports. The default is a
+480-pixel-wide preview at 1 fps.
 
 Live Mapping is a separate operation: select a surface, preview geometry, and save just its
 corners while playback continues. Its lease blocks full project changes until mapping ends.

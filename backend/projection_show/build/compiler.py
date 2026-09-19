@@ -313,9 +313,14 @@ def encoding_args(backend):
     ]
 
 
-def video_args(project, root, atlas, backend, out):
+def video_args(project, root, atlas, profile, backend, out):
     duration = project.show.timeline.duration_seconds
-    args = ["-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=30:d={duration}"]
+    args = [
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c=black:s={profile.width}x{profile.height}:r={profile.fps}:d={duration}",
+    ]
     graph = ["[0:v]setpts=PTS-STARTPTS[base0]"]
     sources = {s.id: s for s in project.scenes}
     surfaces = {s.id: s for s in project.surfaces}
@@ -333,12 +338,12 @@ def video_args(project, root, atlas, backend, out):
                 "-f",
                 "lavfi",
                 "-i",
-                f"color=c={s.color}:s={logical_w}x{logical_h}:r=30:d={c.duration_seconds}",
+                f"color=c={s.color}:s={logical_w}x{logical_h}:r={profile.fps}:d={c.duration_seconds}",
             ]
         else:
             args += ["-protocol_whitelist", "file,pipe", "-enable_drefs", "0"]
             if s.type == "image":
-                args += ["-loop", "1", "-framerate", "30"]
+                args += ["-loop", "1", "-framerate", str(profile.fps)]
             args += ["-i", str(resolve_media(root, s.path))]
         fit = []
         if s.type != "color":
@@ -362,7 +367,7 @@ def video_args(project, root, atlas, backend, out):
         filters = [
             f"trim=start={c.source_in_seconds}:duration={c.duration_seconds}",
             f"setpts=PTS-STARTPTS+{c.start_seconds}/TB",
-            "fps=30",
+            f"fps={profile.fps}",
             *fit,
             f"scale={w}:{h}",
             "setsar=1",
@@ -443,7 +448,7 @@ def _compile_show(
             for backend in backends:
                 try:
                     run_ffmpeg(
-                        video_args(project, root, p["atlas"], backend, work / "video.mp4"),
+                        video_args(project, root, p["atlas"], profile, backend, work / "video.mp4"),
                         work,
                         cancel,
                         lambda v, m, backend=backend: progress(v * 0.75, m, encoder=backend),
