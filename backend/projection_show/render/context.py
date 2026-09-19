@@ -83,6 +83,9 @@ def create_context(
     if visible and not fullscreen:
         glfw.window_hint(glfw.FOCUSED, True)
         glfw.window_hint(glfw.MAXIMIZED, True)
+    if fullscreen:
+        # Keep output projected if the desktop manager declines initial focus.
+        glfw.window_hint(glfw.AUTO_ICONIFY, False)
     glfw.window_hint(glfw.COCOA_RETINA_FRAMEBUFFER, False)
     selected = None
     if fullscreen:
