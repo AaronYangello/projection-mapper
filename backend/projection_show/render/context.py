@@ -10,6 +10,7 @@ def request_visible_window_attention(window, *, visible, fullscreen):
     """Ask the desktop manager to present an operator-facing output window."""
     if not visible:
         return
+    glfw.show_window(window)
     if not fullscreen:
         glfw.maximize_window(window)
     glfw.focus_window(window)
