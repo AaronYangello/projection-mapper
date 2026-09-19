@@ -227,3 +227,51 @@ with GPU/EGL/GLES and single-stream HDMI playback before approving deployment/pe
 Remaining deliberate limits include RGB copies (no zero-copy claim), phone timeline overview,
 YAML/JSON for topology creation, no NLE/remote build worker/external lighting protocols,
 no automatic pruning of old deployments, and no installed unattended startup service.
+
+## Operator polish and remote upload check — 2026-09-19
+
+This targeted follow-up changes mapping interaction, error visibility, control spacing, HTTP
+upload IDs and live-channel keepalive handling. It does not qualify Pi graphics or A/V output.
+
+- Backend: **116 passed, 1 skipped, 8 deselected** with `pytest -q -m 'not gpu'`;
+  the skipped optional GStreamer group was not rerun for these UI/API changes.
+- Native Mac GPU regressions: **8 passed**. These are desktop renderer checks.
+- Browser suite: **23 passed**, including first movement opening exactly one mapping lease,
+  delayed begin followed by Save/Revert, durable save and lease release, legacy-backend save
+  fallback, draft protection, media error visibility without duplicate banners, and preserving
+  clip-range warnings. Upload, timeline and build workflows also run with `crypto.randomUUID`
+  unavailable, matching the relevant private HTTP browser restriction.
+- TypeScript/Vite production build, Prettier check, Ruff lint/format checks and `git diff --check`
+  pass. Existing upstream TestClient/AnyIO warnings and intentional adversarial ZIP warning remain.
+- Interactive local review used a disposable API-only fixture at desktop **1440×1000**,
+  tablet **768×1024**, and phone **390×844**, in the supported dark theme. Reviewed expanded
+  media errors, card warnings, select/disclosure spacing, keyboard mapping, Save/Revert and
+  responsive placement. Fixture renderer-offline warnings are intentional. DOM width checks
+  distinguish browser screenshot cropping/sticky-element artifacts from actual page overflow.
+  These views await user review; automated checks do not constitute user approval.
+
+The existing Pi live connection disconnected after **40.025 seconds** with WebSocket **1011,
+keepalive ping timeout**. It had delivered 396 regular status messages first. Inspection found
+the no-token browser hello was never consumed, causing Uvicorn SansIO to pause incoming reads.
+The repaired local real SansIO server stayed **PAUSED for 65.02 seconds**, delivered **640
+messages**, maximum interval **0.104 seconds**, with **zero disconnects**, using deliberately
+short **0.2-second ping interval and timeout**. This proves the local receive-path repair;
+it is not evidence that the Pi has received the backend update.
+
+An actual authorized Sintel upload to the Pi succeeded through the streamed HTTP API:
+
+- **4,372,373 bytes**, installed as `media/upload-b670602fa00934ca-sintel-trailer.mp4`.
+- SHA-256 on source and destination matched:
+  `b670602fa00934ca27c4351bb0efe7ea7a07fae57284e44226025eeed7c51254`.
+- Explicit scan returned **H.264, 854×480, 24 fps, 52.2083 seconds**, no probe error and a thumbnail.
+  The real Pi browser subsequently displayed this healthy source alongside the earlier missing one.
+- Project snapshot stayed identical and transport stayed `READY`. No scene was added, playback
+  started, mapping changed or deployment activated. The original missing `media/sintel-trailer.mp4`
+  reference was intentionally not overwritten by the uploaded source.
+
+The automated Chrome file chooser failed before submitting a file, so that interaction is
+**not** counted as a successful Pi browser upload. The HTTP ID fix is verified in local browser
+regressions; actual Pi evidence covers upload installation, hashing, probing, scanning and UI
+library display. Application deployment/restart and post-update Pi UI verification remain an
+explicit approval gate. Physical projected playback, HDMI audio and hardware performance were
+not exercised in this follow-up.

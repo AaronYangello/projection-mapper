@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Activity,
+  AlertTriangle,
   Box,
   ChevronRight,
   Circle,
@@ -244,6 +245,7 @@ export default function App() {
     () => sessionStorage.getItem("projection-page") || "Playback",
   );
   const [mappingDirty, setMappingDirty] = useState(false);
+  const [mediaWarningsShown, setMediaWarningsShown] = useState<string[]>([]);
   const [destination, setDestination] = useState<string | null>(null);
   const [mappingSurface, setMappingSurface] = useState<string | undefined>();
   const needsCompiledPreview =
@@ -294,6 +296,12 @@ export default function App() {
     return () => window.removeEventListener("keydown", shortcut);
   }, [connected, busy, status, engine.command, needsCompiledPreview]);
   const [auth, setAuth] = useState("");
+  const visibleWarnings =
+    status?.warnings.filter(
+      (w) =>
+        !w.startsWith("Test pattern active:") &&
+        !(page === "Media" && mediaWarningsShown.includes(w)),
+    ) ?? [];
   const disabled = busy || !connected;
   const running = status?.transport === "RUNNING";
   const live =
@@ -438,13 +446,15 @@ export default function App() {
           )}
           {project && status && (
             <>
-              {status.warnings.filter(
-                (w) => !w.startsWith("Test pattern active:"),
-              ).length > 0 && (
+              {visibleWarnings.length > 0 && (
                 <div className="notice warning" role="status">
-                  {status.warnings
-                    .filter((w) => !w.startsWith("Test pattern active:"))
-                    .join(" · ")}
+                  <AlertTriangle size={18} aria-hidden="true" />
+                  <div>
+                    <strong>Needs attention</strong>
+                    {visibleWarnings.map((warning) => (
+                      <p key={warning}>{warning}</p>
+                    ))}
+                  </div>
                 </div>
               )}
               <section className="transport" aria-label="Show controls">
@@ -566,8 +576,8 @@ export default function App() {
               )}
               {status.calibration && page !== "Mapping" && (
                 <div className="notice" role="status">
-                  Calibration is active in another session. Finish it before
-                  saving project settings.
+                  Mapping is active in another session. Save or Revert there
+                  before saving project settings.
                 </div>
               )}
               <div hidden={page !== "Playback"}>
@@ -693,6 +703,7 @@ export default function App() {
               )}
               <div hidden={page !== "Media"}>
                 <MediaPage
+                  onVisibleWarningsChange={setMediaWarningsShown}
                   project={project}
                   status={status}
                   connected={connected}

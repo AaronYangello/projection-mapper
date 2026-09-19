@@ -162,8 +162,8 @@ def create_app(
         return mapping_call(lambda: runtime.calibration.owned(session_id).response())
 
     @app.post("/api/mapping/{session_id}/save")
-    async def save_mapping(session_id: str):
-        return mapping_call(lambda: runtime.save_mapping(session_id))
+    async def save_mapping(session_id: str, finish: bool = False):
+        return mapping_call(lambda: runtime.save_mapping(session_id, finish=finish))
 
     @app.delete("/api/mapping/{session_id}")
     async def end_mapping(session_id: str):
@@ -241,13 +241,25 @@ def create_app(
                 await socket.close(code=1008)
                 return
         runtime.clients += 1
-        try:
+
+        async def receive_messages():
+            # Drain even when authentication is disabled. Uvicorn's SansIO transport
+            # pauses reads for a queued data message; leaving the browser's hello
+            # unread also blocks ping/pong processing and disconnects every ~40 s.
             while True:
+                if (await socket.receive())["type"] == "websocket.disconnect":
+                    return
+
+        receiver = asyncio.create_task(receive_messages())
+        try:
+            while not receiver.done():
                 await socket.send_json(runtime.status())
                 await asyncio.sleep(0.1)
         except (WebSocketDisconnect, RuntimeError, OSError):
             pass
         finally:
+            receiver.cancel()
+            await asyncio.gather(receiver, return_exceptions=True)
             runtime.clients -= 1
 
     if frontend and (frontend / "index.html").exists():

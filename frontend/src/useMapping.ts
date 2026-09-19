@@ -15,7 +15,9 @@ type Session = {
   revision: number;
   sequence: number;
   dirty: boolean;
+  finished?: boolean;
 };
+type Context = { surfaceId: string; revision: number; original: Corners };
 type Update = {
   mapping: Corners;
   pattern: string;
@@ -46,7 +48,6 @@ export function validCorners(mapping: Corners): boolean {
 }
 
 export function useMapping(reload: () => Promise<unknown>) {
-  const [session, setSession] = useState<Session | null>(null);
   const [mapping, setMapping] = useState<Corners | null>(null);
   const [saved, setSaved] = useState<Corners | null>(null);
   const [pattern, setPattern] = useState("grid");
@@ -54,30 +55,67 @@ export function useMapping(reload: () => Promise<unknown>) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [ack, setAck] = useState(-1);
   const owner = useRef<Session | null>(null);
   const mounted = useRef(true);
+  const opening = useRef<Promise<void> | null>(null);
   const nextSequence = useRef(0);
   const pending = useRef<Update | null>(null);
   const working = useRef<Promise<void> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const failure = useRef("");
 
+  function clear() {
+    owner.current = null;
+    pending.current = null;
+    setMapping(null);
+    setSaved(null);
+    failure.current = "";
+  }
+  function open(context: Context) {
+    setSaved(structuredClone(context.original));
+    failure.current = "";
+    opening.current = (async () => {
+      try {
+        const result = await request<Session>("mapping", {
+          method: "POST",
+          body: JSON.stringify({
+            surface_id: context.surfaceId,
+            revision: context.revision,
+          }),
+        });
+        if (!mounted.current) {
+          await request(`mapping/${result.id}`, { method: "DELETE" });
+          return;
+        }
+        owner.current = result;
+        // Keep every movement made while the lease request was in flight.
+        setSaved(result.mapping);
+      } catch (e) {
+        failure.current = e instanceof Error ? e.message : String(e);
+        setError(failure.current);
+        pending.current = null;
+        setMapping(null);
+        setSaved(null);
+      } finally {
+        opening.current = null;
+      }
+    })();
+  }
   async function flush() {
     clearTimeout(timer.current);
     timer.current = undefined;
+    await opening.current;
     if (working.current) await working.current;
     if (pending.current && owner.current) {
-      const run = async () => {
+      working.current = (async () => {
         while (pending.current && owner.current) {
           const update = pending.current;
           pending.current = null;
           try {
-            const response = await request<Session>(
-              `mapping/${owner.current.id}`,
-              { method: "PUT", body: JSON.stringify(update) },
-            );
-            setAck(response.sequence);
+            await request<Session>(`mapping/${owner.current.id}`, {
+              method: "PUT",
+              body: JSON.stringify(update),
+            });
             failure.current = "";
             setError("");
           } catch (e) {
@@ -87,14 +125,14 @@ export function useMapping(reload: () => Promise<unknown>) {
             break;
           }
         }
-      };
-      working.current = run();
+      })();
       await working.current;
       working.current = null;
     }
   }
   function preview(
     next: Corners,
+    context?: Context,
     nextPattern = pattern,
     nextBlack = blackOthers,
   ) {
@@ -103,6 +141,10 @@ export function useMapping(reload: () => Promise<unknown>) {
         "Keep the four corners convex, clockwise, and inside the projector.",
       );
       return false;
+    }
+    if (!owner.current && !opening.current) {
+      if (!context) return false;
+      open(context);
     }
     setMessage("");
     setMapping(next);
@@ -116,47 +158,24 @@ export function useMapping(reload: () => Promise<unknown>) {
     if (!timer.current) timer.current = setTimeout(() => void flush(), 35);
     return true;
   }
-  async function begin(surfaceId: string, revision: number) {
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const result = await request<Session>("mapping", {
-        method: "POST",
-        body: JSON.stringify({ surface_id: surfaceId, revision }),
-      });
-      if (!mounted.current) {
-        await request(`mapping/${result.id}`, { method: "DELETE" });
-        return;
-      }
-      owner.current = result;
-      setSession(result);
-      setMapping(result.mapping);
-      setSaved(result.mapping);
-      nextSequence.current = 0;
-      setPattern("grid");
-      setBlackOthers(true);
-      setAck(-1);
-      failure.current = "";
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
   async function save() {
     setBusy(true);
     try {
       await flush();
       if (failure.current) throw new Error(failure.current);
+      if (!owner.current) throw new Error("Move a corner to begin editing.");
       const result = await request<Session>(
-        `mapping/${owner.current?.id}/save`,
-        { method: "POST" },
+        `mapping/${owner.current.id}/save?finish=true`,
+        {
+          method: "POST",
+        },
       );
-      owner.current = result;
-      setSession(result);
-      setSaved(result.mapping);
-      setMessage("Mapping saved");
+      // A running older backend may serve newly rebuilt UI assets before restart.
+      // Its save route ignores finish; release that lease explicitly.
+      if (!result.finished)
+        await request(`mapping/${owner.current.id}`, { method: "DELETE" });
+      clear();
+      setMessage("Mapping saved · show content restored");
       setError("");
       await reload();
     } catch (e) {
@@ -171,17 +190,17 @@ export function useMapping(reload: () => Promise<unknown>) {
       pending.current = null;
       clearTimeout(timer.current);
       timer.current = undefined;
+      await opening.current;
       await working.current;
-      await request(`mapping/${owner.current?.id}`, { method: "DELETE" });
-      owner.current = null;
-      setSession(null);
-      setMapping(null);
+      if (owner.current)
+        await request(`mapping/${owner.current.id}`, { method: "DELETE" });
+      clear();
       setError("");
+      setMessage("Mapping reverted · show content restored");
       await reload();
     } catch (e) {
+      // Keep the lease/draft visible on failure so Revert can be retried.
       setError(e instanceof Error ? e.message : String(e));
-      owner.current = null;
-      setSession(null);
     } finally {
       setBusy(false);
     }
@@ -210,7 +229,6 @@ export function useMapping(reload: () => Promise<unknown>) {
     };
   }, []);
   return {
-    session,
     mapping,
     saved,
     pattern,
@@ -218,19 +236,19 @@ export function useMapping(reload: () => Promise<unknown>) {
     error,
     message,
     busy,
-    ack,
-    begin,
+    editing: mapping !== null,
+    dirty:
+      mapping !== null && JSON.stringify(mapping) !== JSON.stringify(saved),
     preview,
     save,
     end,
-    dirty: JSON.stringify(mapping) !== JSON.stringify(saved),
     setPattern: (p: string) => {
       setPattern(p);
-      if (mapping) preview(mapping, p, blackOthers);
+      if (mapping) preview(mapping, undefined, p, blackOthers);
     },
     setBlackOthers: (b: boolean) => {
       setBlackOthers(b);
-      if (mapping) preview(mapping, pattern, b);
+      if (mapping) preview(mapping, undefined, pattern, b);
     },
   };
 }

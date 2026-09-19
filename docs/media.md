@@ -27,7 +27,9 @@ requires a download or an internet connection.
    Audio sources include `.wav`, `.mp3`, `.aac`, `.m4a`, `.flac`, and `.ogg`.
    Actual codec support depends on the installed FFmpeg build.
 2. Stop the show, open Media, and choose **Scan folder**. Cards show inspected dimensions,
-   frame rate, duration, codec, thumbnail, and any errors. Scanning is explicit.
+   frame rate, duration, codec, thumbnail, and an emphasized Needs attention state. Full file
+   errors stay visible in a separate **Media needs attention** panel above the library, even
+   when filtering or selecting a different file. Scanning is explicit.
 3. **Add to show** persists a reusable scene definition. Choose an enabled foreground surface
    and **Play on surface** to interrupt the current cue; automatic queued playback resumes afterward.
 4. While stopped, edit the display name, enabled state, tags, and that scene's fit, focal point, clip range, and playback settings, then
@@ -62,6 +64,11 @@ and decoded image/video dimensions at 32 megapixels. Thumbnails are cached under
 install atomically only while stopped. Exact duplicates are reused/reported; name collisions
 never overwrite files. Upload never adds a scene or starts playback. See [limits, cancellation
 and installation semantics](build-deploy.md#storage-limits).
+
+Uploads receive server-chosen filenames such as `media/upload-<hash>-sintel-trailer.mp4`.
+Uploading a replacement does not silently repair an older scene's missing path. Scan and add
+the new source explicitly, then update the saved show as needed. Browser upload and timeline
+IDs work on deliberate private-network HTTP connections as well as localhost/HTTPS.
 
 Shuffle and raw silent timeline previews use **CPU decoding with GPU composition**.
 Compiled timeline playback uses one GStreamer atlas with one master audio program; actual

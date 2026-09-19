@@ -40,14 +40,14 @@ training data. There was no purple gradient to remove. The changes target actual
 
 | Area | Result |
 | --- | --- |
-| Navigation | Five visible workspaces: Playback, Mapping, Media, Project, Diagnostics. Playback combines the former runtime/overview; Project and Diagnostics retain configuration and health information. Page choice persists within the browser session; changing workspace starts at its top. |
+| Navigation | Six visible workspaces: Playback, Show, Mapping, Media, Project, Diagnostics. Playback combines the former runtime/overview; Project and Diagnostics retain configuration and health information. Page choice persists within the browser session; changing workspace starts at its top. |
 | Playback | Current cue precedes the actual GPU capture; queue stays adjacent on wide screens. Persistent transport, explicit Stop show/Fade to next wording, visible blackout explanation, and a Return to content action for test patterns. Space controls transport only outside form/interactive elements. |
-| Mapping | Fit/zoom editing, 44 px corner handles, four tap-to-nudge buttons, 1/10 px steps, undo/redo, disclosed exact coordinates, saved confirmation, and protected navigation. Mobile Start mapping brings the quad into view. |
+| Mapping | Fit/zoom editing, 44 px corner handles, four tap-to-nudge buttons, 1/10 px steps, undo/redo, disclosed exact coordinates, saved confirmation, and protected navigation. The first geometry change starts preview; Save/Revert finish it from beside the surface selectors. No automatic scroll interrupts the first drag. |
 | Media | Search names/paths/tags, filter video/image/errors, show library membership, preserve thumbnail aspect ratio, expose the actual media folder path, and distinguish file selection from Play on surface. Display name, enabled state, fit, clip timing, crop center, and tags are editable with explicit save/discard feedback. |
 | Drafts | Media and project drafts survive page navigation. Leaving dirty mapping or choosing another media asset offers Keep editing/Discard. Browser unload is guarded. An incoming project change preserves a dirty draft and blocks a stale full-project overwrite. |
 | Project | Existing projectors/surfaces can be renamed, enabled, assigned, and sized with forms. Background and foreground eligibility are exposed. Complete JSON stays available for unrestricted topology and advanced configuration. |
 | Diagnostics | Operational test patterns remain real native-output controls with their effect stated. Metrics and event history stay available without decorative status dashboards on the main path. |
-| Visual/accessibility | Neutral dark canvas, blue edit/action accent, green healthy state, readable 12–14 px secondary text, stronger borders/focus, text state labels, and all five phone navigation destinations visible without a hidden horizontal strip. |
+| Visual/accessibility | Neutral dark canvas, blue edit/action accent, green healthy state, readable 12–14 px secondary text, stronger borders/focus, text state labels, and all six phone navigation destinations visible without a hidden horizontal strip. Select arrows have consistent inset space; disclosures have separation; media errors remain expanded above the cards with an icon and emphasized Needs attention state. |
 
 Representative interaction change:
 

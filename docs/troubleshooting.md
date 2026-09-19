@@ -20,7 +20,7 @@ to isolate mapping. Choose Show to return to normal content.
 **Cues move in the UI but a grid stays projected.** Test pattern mode affects output separately
 from scheduling. Select Show. Pause before calibration to hold the cue position.
 
-**Project or media save is unavailable.** Stop the show and finish any mapping session. Blackout alone does not stop its transport. Unsaved
+**Project or media save is unavailable.** Stop the show and Save or Revert any mapping adjustment. Blackout alone does not stop its transport. Unsaved
 edits stay in the project editor when switching between pages. Full project changes are
 intentionally guarded while running or paused.
 
@@ -37,6 +37,17 @@ enabled scene must match their tag selectors. Ambient-only installations remain 
 automatically and fetches the active project again. If authentication is configured, reload
 and enter the matching token. Session storage keeps it only within this browser tab session.
 
+**The page reconnects or appears to load every 40 seconds, including while paused.** Older
+servers did not consume the browser's WebSocket hello when bearer authentication was disabled.
+Uvicorn SansIO paused transport reads and missed keepalive pongs. The repaired server drains
+incoming messages while publishing status; install the backend update and restart it. This
+is separate from the intentionally slow browser preview image rate.
+
+**Choosing an upload file does nothing over a private HTTP address.** Older frontends used
+`crypto.randomUUID()` unconditionally, although browsers restrict it to secure contexts.
+Rebuild/update the frontend and reload. Uploads and timeline IDs now use `getRandomValues`
+when needed. The server still chooses installation names and validates every uploaded file.
+
 **Low FPS.** Read actual FPS in Playback/Diagnostics. Preview is intentionally only 2 fps and
 can cost some GPU readback time. Test a smaller canvas or fewer/lower-resolution surfaces;
 observe actual behavior on the target GPU. Late frames count native loop work exceeding 1.5×
@@ -48,16 +59,16 @@ tests but emits upstream TestClient deprecation warnings. These are recorded in 
 do not mistake warnings for passing native or hardware tests.
 
 
-**Mapping is in use or expired.** Finish mapping in the other browser, or let its 45-second
-lease expire after it disconnects. An expired preview restores saved geometry. Finish the
-stale session, refresh, and start mapping again. Save mapping is allowed during playback;
+**Mapping is in use or expired.** Save or Revert mapping in the other browser, or let its 45-second
+lease expire after it disconnects. An expired preview restores saved geometry. Refresh a
+stale session before adjusting again. Save mapping is allowed during playback;
 full project/media edits are not.
 
 **Sample video is missing.** Run `.venv/bin/python scripts/download_sample.py`, then stop and
 Scan folder or restart. The download is optional; colors remain playable without it. Put your
 own supported files inside the project's `media/` directory, scan, then Add to show.
 
-**Media is indexed but not selected.** Check the error shown on its card, scene enabled state,
+**Media is indexed but not selected.** Check the Media needs attention panel, scene enabled state,
 and show tag filters. Play on surface needs an enabled foreground surface. After fixing a file that
 failed decoding, stop and rescan to make it eligible again. Shuffle ignores audio. Master audio belongs to a compiled Timeline bundle; source selection
 alone does not insert a timeline clip or switch mode.

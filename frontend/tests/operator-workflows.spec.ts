@@ -133,14 +133,16 @@ test("mapping nudge, undo, redo, leave protection and durable save", async ({
   const before = (await (await request.get("/api/project")).json()).project
     .surfaces[0].mapping.top_left[0];
   await navigation(page, "Mapping").click();
-  await page
-    .getByRole("button", { name: "Start mapping", exact: true })
-    .click();
   const save = page.getByRole("button", { name: "Save mapping", exact: true });
+  await expect(save).toBeDisabled();
+  expect(
+    (await (await request.get("/api/status")).json()).calibration,
+  ).toBeNull();
   await page.getByRole("button", { name: "Nudge right", exact: true }).click();
   await expect(save).toBeEnabled();
   await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(save).toBeDisabled();
+  // Save can also finish a live preview whose geometry was undone.
+  await expect(save).toBeEnabled();
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   await expect(save).toBeEnabled();
   await navigation(page, "Media").click();
@@ -151,12 +153,86 @@ test("mapping nudge, undo, redo, leave protection and durable save", async ({
   const after = (await (await request.get("/api/project")).json()).project
     .surfaces[0].mapping.top_left[0];
   expect(after).toBeGreaterThan(before);
-  await page
-    .getByRole("button", { name: "Finish mapping", exact: true })
-    .click();
+  await expect(save).toBeDisabled();
+  expect(
+    (await (await request.get("/api/status")).json()).calibration,
+  ).toBeNull();
   await expect(
-    page.getByRole("button", { name: "Start mapping", exact: true }),
-  ).toBeVisible();
+    page.getByRole("combobox", { name: "Surface", exact: true }),
+  ).toBeEnabled();
+});
+
+test("first drag survives a slow lease and Save flushes the final corner", async ({
+  page,
+  request,
+}) => {
+  await navigation(page, "Mapping").click();
+  let starts = 0;
+  await page.route("**/api/mapping", async (route) => {
+    starts++;
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await route.continue();
+  });
+  const handle = page.getByRole("button", {
+    name: "Move top left corner",
+    exact: true,
+  });
+  const box = (await handle.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box.x + box.width / 2 + 14,
+    box.y + box.height / 2 + 12,
+    { steps: 5 },
+  );
+  await page.mouse.up();
+  const position = await handle.getAttribute("style");
+  await page.getByRole("button", { name: "Save mapping", exact: true }).click();
+  await expect(page.locator(".mapping-ack")).toContainText("Mapping saved");
+  expect(await handle.getAttribute("style")).toBe(position);
+  expect(starts).toBe(1);
+  expect(
+    (await (await request.get("/api/status")).json()).calibration,
+  ).toBeNull();
+});
+
+test("Revert during lease opening preserves saved geometry and restores content", async ({
+  page,
+  request,
+}) => {
+  const before = (await (await request.get("/api/project")).json()).project;
+  await navigation(page, "Mapping").click();
+  await page.route("**/api/mapping", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "Nudge right", exact: true }).click();
+  await page.getByRole("button", { name: "Revert", exact: true }).click();
+  await expect(page.locator(".mapping-ack")).toContainText("Mapping reverted");
+  expect((await (await request.get("/api/project")).json()).project).toEqual(
+    before,
+  );
+  expect(
+    (await (await request.get("/api/status")).json()).calibration,
+  ).toBeNull();
+});
+
+test("Save also ends preview when a running older server ignores finish", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/mapping/*/save?finish=true", (route) =>
+    route.continue({
+      url: route.request().url().replace("finish=true", "finish=false"),
+    }),
+  );
+  await navigation(page, "Mapping").click();
+  await page.getByRole("button", { name: "Nudge right", exact: true }).click();
+  await page.getByRole("button", { name: "Save mapping", exact: true }).click();
+  await expect(page.locator(".mapping-ack")).toContainText("Mapping saved");
+  expect(
+    (await (await request.get("/api/status")).json()).calibration,
+  ).toBeNull();
 });
 
 test("discarding mapping on navigation releases the lease", async ({
@@ -164,9 +240,6 @@ test("discarding mapping on navigation releases the lease", async ({
   request,
 }) => {
   await navigation(page, "Mapping").click();
-  await page
-    .getByRole("button", { name: "Start mapping", exact: true })
-    .click();
   await page.getByRole("button", { name: "Nudge right", exact: true }).click();
   await navigation(page, "Media").click();
   await page
@@ -217,6 +290,12 @@ test("library filters, empty result recovery and readable file errors", async ({
   page,
 }) => {
   await navigation(page, "Media").click();
+  const issues = page.getByRole("region", { name: "Media issues" });
+  await expect(issues).toBeVisible();
+  await expect(issues).toContainText("broken.mp4");
+  await expect(
+    page.getByText("Technical details", { exact: true }),
+  ).toHaveCount(0);
   const search = page.getByRole("searchbox");
   await search.fill("nothing-matches-this");
   await expect(
@@ -231,11 +310,41 @@ test("library filters, empty result recovery and readable file errors", async ({
     .selectOption("attention");
   await expect(page.locator(".media-card")).toHaveCount(1);
   await page.getByRole("button", { name: /^broken/ }).click();
+  await expect(issues).toBeVisible();
   await expect(
-    page.getByText("Fix or replace the file, then scan again.", {
-      exact: false,
-    }),
+    page.locator(".media-card.has-error .media-attention"),
   ).toBeVisible();
+});
+
+test("media issue details replace duplicate banners but preserve clip warnings", async ({
+  page,
+  request,
+}) => {
+  const data = await (await request.get("/api/project")).json();
+  data.project.scenes.push({
+    id: "missing",
+    name: "Missing source",
+    type: "video",
+    path: "media/missing.mp4",
+  });
+  data.project.scenes.find(
+    (s: { id: string }) => s.id === "clip",
+  ).start_seconds = 10;
+  expect((await request.put("/api/project", { data })).ok()).toBeTruthy();
+  await page.reload();
+  await navigation(page, "Media").click();
+  await page.getByRole("button", { name: "Scan folder", exact: true }).click();
+  const issues = page.getByRole("region", { name: "Media issues" });
+  await expect(issues).toContainText("Missing source");
+  await expect(issues).toContainText("Media file is missing");
+  await expect(page.locator(".notice.warning")).toContainText(
+    "Clip starts after the video ends",
+  );
+  await expect(page.locator(".notice.warning")).not.toContainText(
+    "Missing source",
+  );
+  await navigation(page, "Playback").click();
+  await expect(page.locator(".notice.warning")).toContainText("Missing source");
 });
 
 test("common topology edits save without JSON", async ({ page, request }) => {

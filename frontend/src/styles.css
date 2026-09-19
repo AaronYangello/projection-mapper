@@ -1790,3 +1790,115 @@ progress {
     max-height: 420px;
   }
 }
+
+/* Shared control spacing and persistent, readable issue states. */
+select {
+  appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23cbd3df' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+summary {
+  padding: 12px 4px;
+  margin-block: 3px;
+}
+details[open] > summary {
+  margin-bottom: 8px;
+}
+.notice {
+  border-left-width: 4px;
+  line-height: 1.5;
+}
+.notice > svg {
+  flex: none;
+}
+.notice.warning {
+  border-color: #d8ac52;
+  color: #ffe0a1;
+}
+.notice.error {
+  border-color: #e39289;
+}
+.media-issues {
+  margin: 16px 0;
+  padding: 16px 18px;
+  border: 1px solid #c49b4b;
+  border-left: 4px solid #efbb59;
+  border-radius: 5px;
+  background: #30291e;
+  color: #ffe0a1;
+}
+.media-issues h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.media-issues > p {
+  font-size: 13px;
+  color: #e3d3b4;
+}
+.media-issues ul {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.media-issues li + li {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #6e5b39;
+}
+.media-issues li {
+  overflow-wrap: anywhere;
+}
+.media-issues code {
+  display: block;
+  color: #e3d3b4;
+  font-size: 12px;
+  margin: 4px 0;
+}
+.media-issues li p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.media-card.has-error {
+  border-color: #cfac64;
+}
+.media-card > .media-attention {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ffe0a1;
+  background: #46391f;
+  padding-block: 6px;
+  font-weight: 600;
+}
+.media-attention svg {
+  flex: none;
+}
+.media-layout:has(> .media-grid:only-child) {
+  grid-template-columns: 1fr;
+}
+.mapping-commit-actions {
+  display: flex;
+  gap: 8px;
+}
+.mapping-selectors + .mapping-ack {
+  margin-top: 12px;
+  min-height: 20px;
+}
+@media (max-width: 1000px) {
+  .mapping-commit-actions {
+    grid-column: 1/-1;
+    justify-content: flex-end;
+  }
+}
+@media (max-width: 680px) {
+  .mapping-commit-actions button {
+    flex: 1;
+  }
+  .media-issues {
+    padding: 14px;
+  }
+}

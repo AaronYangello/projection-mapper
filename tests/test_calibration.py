@@ -62,7 +62,8 @@ def test_expiry_restores_saved_mapping(store, monkeypatch):
     assert runtime.project == store.load()
 
 
-def test_failed_save_keeps_preview_and_disk(store, monkeypatch):
+@pytest.mark.parametrize("finish", [False, True])
+def test_failed_save_keeps_preview_and_disk(store, monkeypatch, finish):
     runtime = Runtime(store, RenderBridge())
     session = runtime.begin_mapping("plane-1", 1)
     runtime.preview_mapping(session["id"], Preview(sequence=1, mapping=Mapping()))
@@ -73,9 +74,25 @@ def test_failed_save_keeps_preview_and_disk(store, monkeypatch):
 
     monkeypatch.setattr(store, "save", fail)
     with pytest.raises(OSError):
-        runtime.save_mapping(session["id"])
+        runtime.save_mapping(session["id"], finish=finish)
     assert runtime.project.model_dump() == before
     assert runtime.calibration.session.dirty
+
+
+def test_save_and_finish_is_one_operation_and_preserves_show(store):
+    runtime = Runtime(store, RenderBridge())
+    scheduler, cue = runtime.scheduler, runtime.scheduler.current
+    with TestClient(create_app(runtime)) as client:
+        session = client.post("/api/mapping", json={"surface_id": "plane-1", "revision": 1}).json()
+        path = f"/api/mapping/{session['id']}"
+        preview = changed(runtime.project.surfaces[0].mapping)
+        assert client.put(path, json={"sequence": 1, "mapping": preview.model_dump()}).is_success
+        assert client.post(path + "/save?finish=true").json()["finished"] is True
+        assert client.get("/api/status").json()["calibration"] is None
+        assert runtime.bridge.read()["calibration"] is None
+        assert store.load().surfaces[0].mapping == preview
+        assert runtime.scheduler is scheduler and runtime.scheduler.current == cue
+        assert client.post(path + "/save?finish=true").status_code == 409
 
 
 def test_api_validation_never_applies_invalid_geometry(store):

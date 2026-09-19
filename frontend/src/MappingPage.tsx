@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Check,
   CornerDownLeft,
-  Move,
   Save,
   Undo2,
   Redo2,
@@ -11,7 +9,7 @@ import {
   ArrowLeft,
   ArrowRight,
 } from "lucide-react";
-import { DiscardDialog, useUnsavedWarning } from "./editing";
+import { useUnsavedWarning } from "./editing";
 import type { Project } from "./types";
 import { cornerNames, useMapping, type Corners } from "./useMapping";
 
@@ -50,8 +48,9 @@ export function MappingPage({
   const [redo, setRedo] = useState<Corners[]>([]);
   const [zoom, setZoom] = useState(100);
   const [step, setStep] = useState(1);
-  const [finishWarning, setFinishWarning] = useState(false);
-  const dirty = !!editor.session && editor.dirty;
+  const dirty = editor.dirty;
+  const canAdjust =
+    connected && !editor.busy && !!surface?.enabled && !!projector?.enabled;
   useUnsavedWarning(dirty);
   useEffect(() => {
     onDirtyChange(dirty);
@@ -59,21 +58,32 @@ export function MappingPage({
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   const board = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (editor.session && window.innerWidth <= 680)
-      board.current?.scrollIntoView({ block: "center" });
-  }, [editor.session?.id]);
+    if (!editor.editing) {
+      setHistory([]);
+      setRedo([]);
+    }
+  }, [editor.editing, surfaceId]);
+  function preview(next: Corners) {
+    if (!canAdjust || !surface) return false;
+    return editor.preview(next, {
+      surfaceId,
+      revision,
+      original: surface.mapping,
+    });
+  }
   const drag = useRef<{ pointer: number; before: Corners } | null>(null);
   function remember(before: Corners) {
     setRedo([]);
     setHistory((items) => [...items.slice(-49), structuredClone(before)]);
   }
   function moveCorner(key: keyof Corners, x: number, y: number, undo = true) {
-    if (!mapping || !editor.session || editor.busy) return;
+    if (!mapping || !canAdjust) return;
     const next = {
       ...mapping,
       [key]: [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))],
     } as Corners;
-    if (editor.preview(next) && undo) remember(mapping);
+    if (JSON.stringify(next) === JSON.stringify(mapping)) return;
+    if (preview(next) && undo) remember(mapping);
   }
   return (
     <section className="mapping-page">
@@ -81,16 +91,18 @@ export function MappingPage({
         <div>
           <h2>Align a surface</h2>
           <p>
-            Start mapping, adjust the corners, then save. Changes appear on the
-            output immediately.
+            Move a corner to adjust the live output. Save keeps the new
+            alignment; Revert restores the saved corners.
           </p>
         </div>
         <span className="badge">
-          {editor.session
+          {editor.editing
             ? editor.dirty
               ? "Live preview · unsaved"
               : "Saved geometry"
-            : "Select a surface"}
+            : surface
+              ? "Ready to adjust"
+              : "Select a surface"}
         </span>
       </div>
       {editor.error && (
@@ -104,7 +116,7 @@ export function MappingPage({
             Projector
             <select
               value={projectorId}
-              disabled={!!editor.session}
+              disabled={!!editor.editing}
               onChange={(e) => {
                 setProjectorId(e.target.value);
                 setSurfaceId(
@@ -126,7 +138,7 @@ export function MappingPage({
             Surface
             <select
               value={surfaceId}
-              disabled={!!editor.session}
+              disabled={!!editor.editing}
               onChange={(e) => setSurfaceId(e.target.value)}
             >
               {surfaces.map((s) => (
@@ -137,34 +149,29 @@ export function MappingPage({
               ))}
             </select>
           </label>
-          {!editor.session ? (
+          <div className="mapping-commit-actions">
+            <button
+              disabled={!editor.editing || editor.busy || !connected}
+              onClick={() => void editor.end()}
+              title="Discard this adjustment and return to show content"
+            >
+              <CornerDownLeft size={16} /> Revert
+            </button>
             <button
               className="primary"
-              disabled={
-                !connected ||
-                editor.busy ||
-                !surface?.enabled ||
-                !projector?.enabled
-              }
-              onClick={() => {
-                setHistory([]);
-                void editor.begin(surfaceId, revision);
-              }}
+              disabled={!editor.editing || editor.busy || !connected}
+              onClick={() => void editor.save()}
             >
-              <Move size={16} />
-              Start mapping
+              <Save size={16} /> {editor.busy ? "Applying…" : "Save mapping"}
             </button>
-          ) : (
-            <button
-              disabled={editor.busy}
-              onClick={() =>
-                editor.dirty ? setFinishWarning(true) : void editor.end()
-              }
-            >
-              {"Finish mapping"}
-            </button>
-          )}
+          </div>
         </div>
+        <p className="mapping-ack" role="status">
+          {editor.message ||
+            (editor.editing
+              ? "Live preview · save or revert when finished"
+              : "Drag a corner, nudge, or enter coordinates to adjust")}
+        </p>
         {projector && mapping ? (
           <>
             <div className="mapping-view-tools">
@@ -192,7 +199,7 @@ export function MappingPage({
             >
               <div
                 ref={board}
-                className={`mapping-board ${editor.session ? "editing" : ""}`}
+                className={`mapping-board ${editor.editing ? "editing" : ""}`}
                 style={{
                   aspectRatio:
                     projector.viewport.width / projector.viewport.height,
@@ -256,7 +263,8 @@ export function MappingPage({
                     {surface?.logical.width} × {surface?.logical.height}
                   </small>
                 </span>
-                {editor.session &&
+                {surface?.enabled &&
+                  projector.enabled &&
                   cornerNames.map((key, index) => (
                     <button
                       key={key}
@@ -266,7 +274,7 @@ export function MappingPage({
                         left: `${mapping[key][0] * 100}%`,
                         top: `${mapping[key][1] * 100}%`,
                       }}
-                      disabled={editor.busy || !connected}
+                      disabled={!canAdjust}
                       onFocus={() => setSelected(key)}
                       onPointerDown={(e) => {
                         e.preventDefault();
@@ -294,7 +302,11 @@ export function MappingPage({
                       }}
                       onPointerUp={(e) => {
                         if (drag.current) {
-                          remember(drag.current.before);
+                          if (
+                            JSON.stringify(mapping) !==
+                            JSON.stringify(drag.current.before)
+                          )
+                            remember(drag.current.before);
                           drag.current = null;
                           e.currentTarget.releasePointerCapture(e.pointerId);
                         }
@@ -344,11 +356,7 @@ export function MappingPage({
                 {projector.viewport.width} × {projector.viewport.height}{" "}
                 projector viewport
               </span>
-              <span>
-                {editor.session
-                  ? "Arrow keys: 1 px · Shift: 10 px"
-                  : "Start mapping to move corners"}
-              </span>
+              <span>Arrow keys: 1 px · Shift: 10 px</span>
             </div>
           </>
         ) : (
@@ -356,7 +364,7 @@ export function MappingPage({
             Add a projector and surface in the Project editor to begin.
           </p>
         )}
-        {editor.session && mapping && (
+        {mapping && surface?.enabled && projector?.enabled && (
           <>
             <div className="nudge-controls" aria-label="Nudge a corner">
               <label>
@@ -393,7 +401,7 @@ export function MappingPage({
                     key={label}
                     aria-label={`Nudge ${label}`}
                     title={`Move selected corner ${label}`}
-                    disabled={editor.busy || !connected}
+                    disabled={!canAdjust}
                     onClick={() =>
                       moveCorner(
                         selected,
@@ -409,38 +417,9 @@ export function MappingPage({
                 ))}
               </div>
             </div>
-            <div className="editor-actions mapping-savebar">
-              <span className="mapping-ack">
-                <Check size={14} />
-                {editor.message ||
-                  (editor.dirty
-                    ? "Preview active · not saved"
-                    : "Using saved corners")}
-              </span>
-              <button
-                disabled={editor.busy || !editor.dirty}
-                onClick={() => {
-                  if (editor.saved) {
-                    remember(mapping);
-                    editor.preview(editor.saved);
-                  }
-                }}
-              >
-                <CornerDownLeft size={15} />
-                Revert to saved
-              </button>
-              <button
-                className="primary"
-                disabled={editor.busy || !editor.dirty || !connected}
-                onClick={() => void editor.save()}
-              >
-                <Save size={15} />
-                {editor.busy ? "Applying…" : "Save mapping"}
-              </button>
-            </div>
             <div className="mapping-tools">
               <label>
-                Calibration pattern
+                Pattern while adjusting
                 <select
                   value={editor.pattern}
                   onChange={(e) => editor.setPattern(e.target.value)}
@@ -464,12 +443,12 @@ export function MappingPage({
               </label>
               <div className="mapping-history">
                 <button
-                  disabled={!history.length || editor.busy}
+                  disabled={!history.length || !canAdjust}
                   onClick={() => {
                     const previous = history.at(-1);
                     if (previous) {
                       setRedo((items) => [...items, structuredClone(mapping)]);
-                      editor.preview(previous);
+                      preview(previous);
                       setHistory(history.slice(0, -1));
                     }
                   }}
@@ -478,7 +457,7 @@ export function MappingPage({
                   Undo
                 </button>
                 <button
-                  disabled={!redo.length || editor.busy}
+                  disabled={!redo.length || !canAdjust}
                   onClick={() => {
                     const next = redo.at(-1);
                     if (next) {
@@ -486,7 +465,7 @@ export function MappingPage({
                         ...items,
                         structuredClone(mapping),
                       ]);
-                      editor.preview(next);
+                      preview(next);
                       setRedo(redo.slice(0, -1));
                     }
                   }}
@@ -495,10 +474,10 @@ export function MappingPage({
                   Redo
                 </button>
                 <button
-                  disabled={editor.busy}
+                  disabled={!canAdjust}
                   onClick={() => {
                     remember(mapping);
-                    editor.preview({
+                    preview({
                       top_left: [0.1, 0.1],
                       top_right: [0.9, 0.1],
                       bottom_right: [0.9, 0.9],
@@ -553,21 +532,11 @@ export function MappingPage({
           </>
         )}
         <p className="hint">
-          Save stores the corners without restarting playback. Finish mapping
-          restores show content. If this browser disconnects, the preview
-          reverts to saved geometry after 45 seconds.
+          Save stores the corners and returns to show content without restarting
+          playback. Revert discards the adjustment. If this browser disconnects,
+          the preview reverts to saved geometry after 45 seconds.
         </p>
       </div>
-      <DiscardDialog
-        open={finishWarning}
-        title="Finish without saving?"
-        description="Unsaved corners will be discarded and the saved mapping restored."
-        onKeep={() => setFinishWarning(false)}
-        onDiscard={() => {
-          setFinishWarning(false);
-          void editor.end();
-        }}
-      />
     </section>
   );
 }

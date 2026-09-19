@@ -36,6 +36,13 @@ test.beforeEach(async ({ page, request }) => {
     ).ok(),
   ).toBeTruthy();
   await page.goto("/");
+  // Private-network HTTP does not expose the secure-context randomUUID API.
+  await page.evaluate(() =>
+    Object.defineProperty(crypto, "randomUUID", {
+      value: undefined,
+      configurable: true,
+    }),
+  );
   await nav(page, "Show").click();
 });
 

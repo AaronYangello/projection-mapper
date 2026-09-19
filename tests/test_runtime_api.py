@@ -1,6 +1,32 @@
 from fastapi.testclient import TestClient
 from projection_show.api import create_app
 from projection_show.runtime import RenderBridge, Runtime
+from starlette.websockets import WebSocket
+
+
+def test_unauthenticated_live_channel_drains_browser_hello(store, monkeypatch):
+    received = []
+    original_receive = WebSocket.receive
+
+    async def observed_receive(socket):
+        message = await original_receive(socket)
+        if message["type"] == "websocket.receive":
+            received.append(message)
+        return message
+
+    monkeypatch.setattr(WebSocket, "receive", observed_receive)
+    runtime = Runtime(store, RenderBridge())
+    with TestClient(create_app(runtime)) as client:
+        with client.websocket_connect("/api/live") as socket:
+            socket.send_json({"token": ""})
+            # Streaming must remain compatible with the no-token browser hello.
+            for _ in range(5):
+                assert socket.receive_json()["state"] == "RUNNING"
+                if received:
+                    break
+            assert len(received) == 1
+            assert runtime.clients == 1
+    assert runtime.clients == 0
 
 
 def test_frontend_reload_serves_current_build(store, tmp_path):

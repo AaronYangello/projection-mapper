@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { getToken, request } from "./api";
+import { ident } from "./ident";
 
 type Item = {
   id: string;
@@ -67,7 +68,7 @@ export function UploadPanel({
       return;
     }
     for (const file of Array.from(files)) {
-      const id = crypto.randomUUID();
+      const id = ident();
       setItems((old) => [
         ...old,
         { id, name: file.name, progress: 0, state: "Preparing" },

@@ -9,6 +9,7 @@ import {
   Search,
   Copy,
   Music2,
+  AlertTriangle,
 } from "lucide-react";
 import { UploadPanel } from "./UploadPanel";
 import { getToken, request } from "./api";
@@ -62,12 +63,14 @@ export function MediaPage({
   connected,
   reload,
   save,
+  onVisibleWarningsChange,
 }: {
   project: Project;
   status: Status;
   connected: boolean;
   reload: () => Promise<unknown>;
   save: (p: Project) => Promise<void>;
+  onVisibleWarningsChange: (warnings: string[]) => void;
 }) {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [folder, setFolder] = useState("");
@@ -100,6 +103,15 @@ export function MediaPage({
   const canEdit =
     status.transport === "READY" && connected && !status.calibration;
   useUnsavedWarning(dirty);
+  useEffect(() => {
+    // Hide a global duplicate only when this panel actually displays its details.
+    onVisibleWarningsChange(
+      project.scenes.flatMap((source) => {
+        const issue = assets.find((item) => item.path === source.path)?.error;
+        return issue ? [`${source.name}: ${issue}`] : [];
+      }),
+    );
+  }, [assets, project.scenes, onVisibleWarningsChange]);
   useEffect(() => {
     void request<{ assets: MediaAsset[]; folder?: string }>("media")
       .then((data) => {
@@ -232,7 +244,7 @@ export function MediaPage({
       {!canEdit && (
         <p className="notice">
           {status.calibration
-            ? "Finish mapping before changing media settings."
+            ? "Save or revert mapping before changing media settings."
             : "Stop show to scan or save settings."}{" "}
           You can still browse and play saved sources.
         </p>
@@ -246,6 +258,31 @@ export function MediaPage({
         <div role="status" className="notice success">
           {message}
         </div>
+      )}
+      {assets.some((item) => item.error) && (
+        <section className="media-issues" aria-label="Media issues">
+          <h3>
+            <AlertTriangle size={18} aria-hidden="true" /> Media needs attention
+          </h3>
+          <p>
+            These files cannot play. Fix or replace them, then choose Scan
+            folder.
+          </p>
+          <ul>
+            {assets
+              .filter((item) => item.error)
+              .map((item) => (
+                <li key={item.id}>
+                  <strong>
+                    {project.scenes.find((s) => s.path === item.path)?.name ??
+                      item.name}
+                  </strong>
+                  <code>{item.path}</code>
+                  <p>{item.error}</p>
+                </li>
+              ))}
+          </ul>
+        </section>
       )}
       {loading ? (
         <p role="status" className="empty">
@@ -293,7 +330,7 @@ export function MediaPage({
                 const source = project.scenes.find((s) => s.path === item.path);
                 return (
                   <button
-                    className={`media-card ${item.id === selected ? "selected" : ""}`}
+                    className={`media-card ${item.id === selected ? "selected" : ""} ${item.error ? "has-error" : ""}`}
                     aria-pressed={item.id === selected}
                     key={item.id}
                     onClick={() => select(item.id)}
@@ -305,13 +342,18 @@ export function MediaPage({
                     <span className="media-card-name">
                       {source?.name ?? item.name}
                     </span>
-                    <span>
-                      {item.error
-                        ? "Needs attention"
-                        : item.type === "audio"
+                    {item.error ? (
+                      <span className="media-attention">
+                        <AlertTriangle size={14} aria-hidden="true" /> Needs
+                        attention
+                      </span>
+                    ) : (
+                      <span>
+                        {item.type === "audio"
                           ? `Audio · ${item.duration_seconds?.toFixed(1)} s`
                           : `${item.width} × ${item.height}${item.type === "video" ? ` · ${item.duration_seconds?.toFixed(1)} s` : " · Image"}`}
-                    </span>
+                      </span>
+                    )}
                     <span className="media-membership">
                       {source
                         ? source.enabled
@@ -336,7 +378,7 @@ export function MediaPage({
                 </div>
               )}
             </div>
-            {asset && (
+            {asset && !asset.error && (
               <section
                 className="panel form-panel media-details"
                 aria-label="Selected media"
@@ -359,18 +401,7 @@ export function MediaPage({
                     <span>{((asset.bytes ?? 0) / 1048576).toFixed(1)} MB</span>
                   </div>
                 )}
-                {asset.error ? (
-                  <div className="media-error">
-                    <p className="notice error">
-                      This file could not be read. Fix or replace the file, then
-                      scan again.
-                    </p>
-                    <details>
-                      <summary>Technical details</summary>
-                      <p>{asset.error}</p>
-                    </details>
-                  </div>
-                ) : !scene ? (
+                {!scene ? (
                   <>
                     <p>Add this file as a reusable scene before playing it.</p>
                     <button

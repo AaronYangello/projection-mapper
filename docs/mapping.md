@@ -1,7 +1,8 @@
 # Mapping and calibration
 
-Open **Mapping**, select a projector and surface, then choose **Start mapping**. Changes reach
-native output while the show runs; calibration does not restart the current cue.
+Open **Mapping** and select a projector and surface. Moving a corner, nudging, or changing
+coordinates begins a live adjustment automatically. Merely selecting a surface or a pattern
+does not change output. Calibration does not restart the current cue.
 
 1. Drag any numbered corner. The editor accepts mouse, pen, and touch pointer events.
 2. With a corner focused, use arrow keys for one projector pixel; Shift+arrow moves ten pixels.
@@ -12,10 +13,12 @@ native output while the show runs; calibration does not restart the current cue.
 4. **Black other surfaces** isolates the selected surface. Global blackout still overrides it.
 5. **Undo/Redo** steps through local edits; **Reset to inset rectangle** previews a
    rectangle spanning 10%–90% of the projector.
-   **Revert** restores the most recently saved geometry.
+   **Revert** restores the saved geometry and ends the live adjustment.
 6. **Save mapping** writes only the selected geometry, keeping the current show and decoder
-   running. **Finish mapping** returns to normal output. Dirty edits prompt you to keep editing
-   or discard; leaving this page uses the same protection and ends the preview.
+   running, then returns to normal output in the same operation. Save and Revert sit beside
+   the projector/surface selectors; there is no separate Start/Finish step. Dirty edits prompt
+   you to keep editing or discard before leaving this page. The selectors remain locked during
+   an adjustment so movement cannot accidentally target a different surface.
 
 Corners are normalized within a projector: `[0,0]` is top-left, `[1,1]` is bottom-right.
 Order is TL, TR, BR, BL; keep the quadrilateral convex and clockwise. Geometry is rejected if
@@ -28,7 +31,10 @@ A single session owns calibration at a time, with a 45-second lease renewed ever
 If a browser disappears, expiry restores saved geometry. A sequence number rejects stale
 updates. The browser sends the latest drag position at a 35 ms interval, serializes requests,
 and flushes pending changes before saving. Save checks the persistent project revision and
-uses the same atomic persistence as full project edits.
+uses the same atomic persistence as full project edits. The first drag keeps its latest position
+while ownership is being acquired. Save/Revert wait for in-flight requests; failed saves retain
+the preview for retry. `POST /api/mapping/{id}/save?finish=true` saves and releases ownership
+without a second request; omitting `finish` preserves the earlier API's save-and-continue behavior.
 
 Geometry has its own render revision. Changing it updates homographies without reallocating
 surface textures or resetting playback. A local browser-to-renderer acknowledgement was

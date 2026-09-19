@@ -12,7 +12,7 @@ import type {
   Timeline,
   Track,
 } from "./types";
-const ident = () => crypto.randomUUID();
+import { ident } from "./ident";
 const number = (form: FormData, name: string) => Number(form.get(name));
 export function ShowPage({
   project,

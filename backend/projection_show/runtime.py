@@ -337,15 +337,17 @@ class Runtime:
         self.publish()
         return result
 
-    def save_mapping(self, session_id: str) -> dict:
+    def save_mapping(self, session_id: str, *, finish: bool = False) -> dict:
         project = self.calibration.project_to_save(self.project, self.revision, session_id)
         self.store.save(project)
         self.project = project
         self.revision += 1
         result = self.calibration.saved(self.revision)
         self.event("Mapping saved", self.calibration.session.surface_id)
+        if finish:
+            self.calibration.end(session_id)
         self.publish()
-        return result
+        return {**result, "finished": finish}
 
     def end_mapping(self, session_id: str) -> None:
         self.calibration.end(session_id)
