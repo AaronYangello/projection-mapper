@@ -12,7 +12,7 @@ from PIL import Image
 from ..mapping import color_rgb, homography
 from ..runtime import RenderBridge
 from . import shaders
-from .context import create_context, graphics_report
+from .context import create_context, graphics_report, request_visible_window_attention
 from .labels import calibration_label
 from .media import MediaPlayback
 from .preview import PreviewEncoder, encode_preview
@@ -396,6 +396,7 @@ def run_renderer(
     frames = late = 0
     metrics = RenderMetrics()
     reported_geometry = -1
+    pending_window_attention = visible
     try:
         while not stop.is_set() and not glfw.window_should_close(window):
             began = time.monotonic()
@@ -404,6 +405,10 @@ def run_renderer(
             if glfw.get_key(window, glfw.KEY_ESCAPE) == glfw.PRESS:
                 break
             glfw.poll_events()
+            if pending_window_attention:
+                # Openbox applies initial fullscreen state while processing these events.
+                request_visible_window_attention(window, visible=visible, fullscreen=fullscreen)
+                pending_window_attention = False
             frame = bridge.read()
             if frame:
                 engine.render(frame)
