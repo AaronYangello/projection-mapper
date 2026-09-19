@@ -78,6 +78,35 @@ CPU/RSS, temperature, throttling flags and configured viewport rectangles. Succe
 and unchanged four-quadrant topology. The physical image across all four projectors remains a
 human visual acceptance gate.
 
+### 2026-09-19 deployment result
+
+Commit `103f83d` was deployed to the Pi and sampled for 45 seconds per condition with the same
+3840×2160/30 output, seven-surface shuffle content and control clients.
+
+| Measurement | Preview 1 fps / 480 px | Preview disabled |
+| --- | ---: | ---: |
+| Output FPS, min–max | 30.2–31.2 | 30.7–30.7 |
+| New late frames | 0 | 0 |
+| Average render work | 5.47 ms | 5.50 ms |
+| Maximum frame work | 40.33 ms | 24.89 ms |
+| Average preview readback | 27.60 ms | 0 ms |
+| Last JPEG encode / age | 1.53 / 1.62 ms | n/a |
+| Preview skips / backlog | 0 / none | n/a |
+| Average CPU | 21.67% | 21.13% |
+| Temperature | 55.1–57.3 °C | 56.2–58.4 °C |
+| Throttling | `0x0` | `0x0` |
+
+The live preview adds one longer GPU-readback frame per second, but no longer causes cumulative
+late frames or loss of the 30 FPS output target. The worker stayed current and JPEG encode time
+was negligible compared with GPU readback. The saved installation was restored to preview on,
+the endpoint returned a valid 480×270 JPEG, and the final renderer reported Broadcom V3D with
+no software fallback at 3840×2160/30.
+
+The installation YAML diff is limited to `refresh_rate: 30`, `preview_fps: 1.0`, and
+`preview_width: 480`; all four viewport rectangles and calibrated mappings are unchanged. An
+LXDE autostart entry selects 3840×2160/30 on future desktop logins, though a reboot/login cycle
+has not yet been performed to test that persistence.
+
 ## Remaining qualification
 
 With the selected output mode, vary one factor at a time: enabled media surfaces, logical
