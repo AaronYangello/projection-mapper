@@ -64,3 +64,23 @@ def test_hidden_output_does_not_request_desktop_attention(monkeypatch):
     context.request_visible_window_attention("window", visible=False, fullscreen=False)
 
     assert calls == []
+
+
+def test_x11_window_manager_attention_maximizes_and_focuses(monkeypatch):
+    calls = []
+    monkeypatch.setattr(context.sys, "platform", "linux")
+    monkeypatch.setattr(
+        context.glfw, "get_x11_window", lambda window: 0x1000007, raising=False
+    )
+    monkeypatch.setattr(
+        context.subprocess,
+        "run",
+        lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    context.request_x11_window_manager_attention("window")
+
+    assert [command for command, _ in calls] == [
+        ["wmctrl", "-i", "-r", "0x01000007", "-b", "add,maximized_vert,maximized_horz"],
+        ["wmctrl", "-i", "-a", "0x01000007"],
+    ]

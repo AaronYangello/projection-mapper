@@ -1,6 +1,8 @@
 """Explicit desktop GL or EGL/GLES backend selection; no unsafe version overrides."""
 
 import os
+import subprocess
+import sys
 
 import glfw
 import moderngl
@@ -15,6 +17,28 @@ def request_visible_window_attention(window, *, visible, fullscreen):
     if not fullscreen:
         glfw.maximize_window(window)
     glfw.focus_window(window)
+
+
+def request_x11_window_manager_attention(window):
+    """Use the optional X11 window-manager request that Openbox reliably honors."""
+    if not sys.platform.startswith("linux") or not hasattr(glfw, "get_x11_window"):
+        return
+    try:
+        window_id = f"0x{glfw.get_x11_window(window):08x}"
+        for command in (
+            ["wmctrl", "-i", "-r", window_id, "-b", "add,maximized_vert,maximized_horz"],
+            ["wmctrl", "-i", "-a", window_id],
+        ):
+            subprocess.run(
+                command,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=1,
+            )
+    except (OSError, subprocess.TimeoutExpired):
+        # wmctrl is a Pi/Openbox enhancement, not a renderer dependency.
+        return
 
 
 def graphics_report(ctx, size, backend):

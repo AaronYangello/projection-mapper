@@ -12,7 +12,12 @@ from PIL import Image
 from ..mapping import color_rgb, homography
 from ..runtime import RenderBridge
 from . import shaders
-from .context import create_context, graphics_report, request_visible_window_attention
+from .context import (
+    create_context,
+    graphics_report,
+    request_visible_window_attention,
+    request_x11_window_manager_attention,
+)
 from .labels import calibration_label
 from .media import MediaPlayback
 from .preview import PreviewEncoder, encode_preview
@@ -423,6 +428,7 @@ def run_renderer(
                         request_visible_window_attention(
                             window, visible=visible, fullscreen=fullscreen
                         )
+                        request_x11_window_manager_attention(window)
                         pending_window_attention = False
                 presented = time.monotonic()
                 preview_readback_ms = 0.0
