@@ -6,14 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from .migrations import migrate  # noqa: F401 - public migration entry point
 from .models import Project
-
-
-def migrate(data: dict) -> dict:
-    """Explicit migration entry point; never guess at unknown schema versions."""
-    if not isinstance(data, dict) or data.get("schema_version") != 1:
-        raise ValueError("Unsupported schema_version; expected 1")
-    return data
 
 
 def atomic_write(path: Path, contents: str) -> None:

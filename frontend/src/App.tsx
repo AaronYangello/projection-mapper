@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { DiscardDialog } from "./editing";
 import { setToken } from "./api";
+import { ShowPage, TimelinePlayback } from "./ShowPage";
+import { AudioSettings } from "./AudioSettings";
 import { MediaPage } from "./MediaPage";
 import { MappingPage } from "./MappingPage";
 import { ProjectEditor } from "./ProjectEditor";
@@ -244,6 +246,10 @@ export default function App() {
   const [mappingDirty, setMappingDirty] = useState(false);
   const [destination, setDestination] = useState<string | null>(null);
   const [mappingSurface, setMappingSurface] = useState<string | undefined>();
+  const needsCompiledPreview =
+    status?.mode === "timeline" &&
+    !!project?.show.timeline.audio &&
+    !status?.deployment;
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [page]);
@@ -267,6 +273,7 @@ export default function App() {
         busy ||
         !status ||
         status.blackout ||
+        needsCompiledPreview ||
         document.querySelector("dialog[open]") ||
         (event.target instanceof Element &&
           event.target.closest(
@@ -285,7 +292,7 @@ export default function App() {
     }
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
-  }, [connected, busy, status, engine.command]);
+  }, [connected, busy, status, engine.command, needsCompiledPreview]);
   const [auth, setAuth] = useState("");
   const disabled = busy || !connected;
   const running = status?.transport === "RUNNING";
@@ -293,6 +300,7 @@ export default function App() {
     connected && status?.renderer.status === "LIVE" && !status.blackout;
   const nav = [
     { name: "Playback", icon: Radio },
+    { name: "Show", icon: Columns3 },
     { name: "Mapping", icon: Layers },
     { name: "Media", icon: Monitor },
     { name: "Project", icon: Settings2 },
@@ -357,14 +365,18 @@ export default function App() {
               <h1>{page}</h1>
               <p>
                 {page === "Playback"
-                  ? "Current output and automatic queue. Space to pause or resume."
-                  : page === "Project"
-                    ? "Outputs, surfaces, and automatic show settings."
-                    : page === "Mapping"
-                      ? "Align each surface with the projector output."
-                      : page === "Media"
-                        ? "Select a file to inspect it. Play on surface sends it to the output."
-                        : "Output tests, decoder status, and recent activity."}
+                  ? status?.mode === "timeline"
+                    ? "Current show time, mapped output and surface brightness. Space to pause or resume."
+                    : "Current output and automatic queue. Space to pause or resume."
+                  : page === "Show"
+                    ? "Author surface timing, opacity, audio, and deployment bundles."
+                    : page === "Project"
+                      ? "Outputs, surfaces, and automatic show settings."
+                      : page === "Mapping"
+                        ? "Align each surface with the projector output."
+                        : page === "Media"
+                          ? "Select a file to inspect it. Play on surface sends it to the output."
+                          : "Output tests, decoder status, and recent activity."}
               </p>
             </div>
             <span
@@ -448,7 +460,9 @@ export default function App() {
                 <div className="transport-primary">
                   <button
                     className="primary"
-                    disabled={disabled || status.blackout}
+                    disabled={
+                      disabled || status.blackout || needsCompiledPreview
+                    }
                     title="Space: start, pause, or resume the show"
                     onClick={() =>
                       void engine.command(
@@ -467,31 +481,39 @@ export default function App() {
                         ? "Resume"
                         : "Start show"}
                   </button>
-                  <button
-                    disabled={
-                      disabled ||
-                      status.transport === "READY" ||
-                      status.blackout
-                    }
-                    onClick={() => void engine.command("skip")}
-                  >
-                    <SkipForward size={16} />
-                    Next
-                  </button>
-                  <button
-                    disabled={
-                      disabled ||
-                      status.transport === "READY" ||
-                      status.blackout
-                    }
-                    onClick={() => void engine.command("fade-out")}
-                  >
-                    <Waves size={16} />
-                    Fade to next
-                  </button>
+                  {status.mode !== "timeline" && (
+                    <>
+                      <button
+                        disabled={
+                          disabled ||
+                          status.transport === "READY" ||
+                          status.blackout
+                        }
+                        onClick={() => void engine.command("skip")}
+                      >
+                        <SkipForward size={16} />
+                        Next
+                      </button>
+                      <button
+                        disabled={
+                          disabled ||
+                          status.transport === "READY" ||
+                          status.blackout
+                        }
+                        onClick={() => void engine.command("fade-out")}
+                      >
+                        <Waves size={16} />
+                        Fade to next
+                      </button>
+                    </>
+                  )}
                   <button
                     disabled={disabled || status.transport === "READY"}
-                    title="Clear the cue and reset the queue. Ambient content remains visible."
+                    title={
+                      status.mode === "timeline"
+                        ? "Reset time to zero and darken timeline surfaces."
+                        : "Clear the cue and reset the queue. Ambient content remains visible."
+                    }
                     onClick={() => void engine.command("stop")}
                   >
                     <CircleStop size={16} />
@@ -511,6 +533,13 @@ export default function App() {
                   {status.blackout ? "Restore output" : "Blackout"}
                 </button>
               </section>
+              {needsCompiledPreview && (
+                <p className="notice">
+                  This timeline has audio. In Show → Build &amp; Deploy, build
+                  and load Preview built show before starting synchronized
+                  playback.
+                </p>
+              )}
               {status.blackout && (
                 <div className="notice error" role="status">
                   <strong>Blackout active.</strong> All output is black and
@@ -542,9 +571,15 @@ export default function App() {
                 </div>
               )}
               <div hidden={page !== "Playback"}>
-                <div className="runtime-layout">
+                <div
+                  className={`runtime-layout ${status.mode === "timeline" ? "timeline-runtime" : ""}`}
+                >
                   <div className="main-column">
-                    <CurrentCue project={project} status={status} />
+                    {status.mode === "timeline" ? (
+                      <TimelinePlayback project={project} status={status} />
+                    ) : (
+                      <CurrentCue project={project} status={status} />
+                    )}
                     <Output
                       project={project}
                       status={status}
@@ -552,7 +587,9 @@ export default function App() {
                       visible={page === "Playback"}
                     />
                   </div>
-                  <Queue project={project} status={status} />
+                  {status.mode !== "timeline" && (
+                    <Queue project={project} status={status} />
+                  )}
                 </div>
                 <section className="surfaces-section">
                   <div className="section-heading">
@@ -561,9 +598,11 @@ export default function App() {
                       <span className="count">{project.surfaces.length}</span>
                     </h2>
                     <span className="subtle">
-                      {status.blackout || status.transport === "PAUSED"
-                        ? "Ambient paused"
-                        : "Background content on enabled surfaces"}
+                      {status.mode === "timeline"
+                        ? "Surface opacity follows the show clock"
+                        : status.blackout || status.transport === "PAUSED"
+                          ? "Ambient paused"
+                          : "Background content on enabled surfaces"}
                     </span>
                   </div>
                   <div className="surface-cards">
@@ -573,11 +612,20 @@ export default function App() {
                         project.projectors.some(
                           (p) => p.id === surface.projector_id && p.enabled,
                         );
+                      const layer = status.timeline?.layers.find(
+                        (l) => l.surface_id === surface.id,
+                      );
                       const active =
-                        enabled &&
-                        status.current?.surface_id === surface.id &&
-                        status.transport !== "READY" &&
-                        status.phase !== "GAP";
+                        status.mode === "timeline"
+                          ? enabled &&
+                            status.transport !== "READY" &&
+                            !!layer &&
+                            layer.opacity > 0 &&
+                            (layer.role === "lighting" || !!layer.source_id)
+                          : enabled &&
+                            status.current?.surface_id === surface.id &&
+                            status.transport !== "READY" &&
+                            status.phase !== "GAP";
                       const ambient = project.ambient_profiles.find(
                         (a) => a.id === surface.ambient_profile,
                       );
@@ -608,10 +656,14 @@ export default function App() {
                                 : status.pattern !== "show"
                                   ? "Test pattern"
                                   : active
-                                    ? words(status.phase)
-                                    : ambient?.enabled
-                                      ? ambient.name
-                                      : "Black"}
+                                    ? status.mode === "timeline"
+                                      ? `${Math.round((layer?.opacity ?? 0) * 100)}% ${layer?.role === "lighting" ? "light" : "media"}`
+                                      : words(status.phase)
+                                    : status.mode === "timeline"
+                                      ? "Dark"
+                                      : ambient?.enabled
+                                        ? ambient.name
+                                        : "Black"}
                           </span>
                           <span className="surface-action">Map surface →</span>
                         </button>
@@ -619,6 +671,15 @@ export default function App() {
                     })}
                   </div>
                 </section>
+              </div>
+              <div hidden={page !== "Show"}>
+                <ShowPage
+                  project={project}
+                  status={status}
+                  revision={engine.revision}
+                  save={engine.save}
+                  reload={engine.load}
+                />
               </div>
               {page === "Mapping" && (
                 <MappingPage
@@ -651,6 +712,53 @@ export default function App() {
                 />
               </div>
               <div hidden={page !== "Diagnostics"}>
+                {status.renderer.timeline_clock && (
+                  <section className="panel form-panel">
+                    <h3>Native playback pipeline</h3>
+                    <dl className="build-details">
+                      {Object.entries(status.renderer.timeline_clock).map(
+                        ([key, value]) => (
+                          <div className="diagnostic-item" key={key}>
+                            <dt>{key.replaceAll("_", " ")}</dt>
+                            <dd>
+                              {value === null
+                                ? "Unavailable"
+                                : typeof value === "object"
+                                  ? JSON.stringify(value)
+                                  : String(value)}
+                            </dd>
+                          </div>
+                        ),
+                      )}
+                    </dl>
+                    <p className="subtle">
+                      A/V skew is video PTS minus pipeline position, not
+                      measured speaker/projector latency. A silent test sink
+                      never verifies HDMI.
+                    </p>
+                  </section>
+                )}
+                {status.system && (
+                  <section className="panel form-panel">
+                    <h3>Host resources</h3>
+                    <p>
+                      Process CPU: {status.system.cpu_percent}% (100% = one
+                      core) · RAM:{" "}
+                      {(status.system.memory_bytes / 1024 ** 2).toFixed(1)} MiB
+                      ({status.system.memory_measurement}) · Free disk:{" "}
+                      {(status.system.free_disk_bytes / 1024 ** 3).toFixed(1)}{" "}
+                      GiB
+                    </p>
+                    <p>
+                      Temperature:{" "}
+                      {status.system.temperature_c === null
+                        ? "Unavailable"
+                        : `${status.system.temperature_c} °C`}{" "}
+                      · Throttling: {status.system.throttling ?? "Unavailable"}
+                    </p>
+                  </section>
+                )}
+                <AudioSettings stopped={status.transport === "READY"} />
                 <div className="stat-grid">
                   <section className="panel stat">
                     <span>Native renderer</span>
@@ -757,7 +865,7 @@ export default function App() {
                 </span>
                 <span>
                   Projection Show Engine{" "}
-                  <span className="footer-version">v0.2 / Desktop preview</span>
+                  <span className="footer-version">v0.3 / Local engine</span>
                 </span>
               </footer>
             </>

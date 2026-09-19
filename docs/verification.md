@@ -141,3 +141,89 @@ All five pages were checked at desktop, tablet, and phone widths in the supporte
 Ruff, frontend formatting, and diff checks pass. The main app remains running with its prior
 stopped transport and blackout state. Existing topology now has form controls; adding/removing
 entries still uses the complete JSON editor. Physical Pi/LAN validation remains outstanding.
+
+## v0.3 coordinated authoring/build/deployment · 2026-09-18
+
+Baseline for this phase was clean `2d67d8e`, including the prior UX work. The original demo
+YAML/media/calibration were preserved; native review used `artifacts/timeline-review/`.
+The authoritative specification and required guides were read before editing.
+
+### Final automated checks
+
+| Command | Result |
+| --- | --- |
+| `.venv/bin/pytest -q -m 'not gpu'` | 113 passed; 1 optional GStreamer test skipped; 8 GPU tests deselected |
+| `RUN_GPU_TESTS=1 .venv/bin/pytest -q -m gpu` | 8 passed on real Mac GL; no skips |
+| `RUN_GSTREAMER_TESTS=1 .venv/bin/pytest -q -m gst` | 1 passed with real GStreamer, silent sink, actual volume/mute mixer, pause/long-pause/seek/loop/offset and nonblocking bridge |
+| `.venv/bin/ruff check backend tests scripts` | Passed |
+| `.venv/bin/ruff format --check backend tests scripts` | Passed |
+| `cd frontend && npm run build` | TypeScript and Vite passed |
+| `cd frontend && npm run format:check` | Passed |
+| `cd frontend && npm run test:ui` | 19 workflows passed against disposable project/Chrome |
+| `.venv/bin/projection-show validate --project projects/demo/project.yaml` | Passed; v1 source remains unchanged |
+| `git diff --check` | Passed |
+
+This is **122 backend/native tests in total** when both optional native groups are run.
+Upstream Starlette/httpx and AnyIO deprecation warnings remain. The ZIP adversarial test
+intentionally emits a duplicate-member warning; it verifies rejection, not acceptance.
+
+New coverage includes migration/round-trip/reference/range/overlap validation; deterministic
+surface opacity and transport; real four-lane atlas pixels/gaps/H.264/AAC alignment; cache
+invalidation/reuse/corruption and cancellation; literal process arguments; streamed uploads,
+duplicate/collision/probe/space/concurrency cleanup; ZIP traversal/link/duplicate/ratio/member/
+expansion/hash checks; incompatible destinations; failed atomic activation and rollback;
+restart fallback; private target protocol/auth/masked credentials; renderer UV/circle/alpha/
+four-media-plus-sixteen-lights; authoritative pipeline generations and worker isolation.
+
+Browser tests cover mode activation, grouping/order, clip drag/duplicate/overlap, opacity
+editing/presets, draft/conflict protection, real build/export/staleness, upload probe/duplicate/
+error/cancel and phone controls. Remote deployment and rollback confirmation/failure UI
+responses are **explicitly synthetic**. Real local backend activation/recovery is tested
+separately; neither substitutes for a remote Pi deployment.
+
+### Native and interactive review
+
+See [implementation measurements](timeline-implementation.md#mac-compiler-and-playback-measurements)
+for exact encoder timing, actual Mac decoder and 65-sample performance figures. The reviewed
+native output visibly contains four moving atlas regions and sixteen alpha-modulated
+rectangle/circle lights. The final run reports `vtdec_hw` / `avdec_aac`, `fakesink`, and
+`GstSystemClock`; no HDMI/speaker output was used or claimed. Browser preview is a capture
+of that native frame, not a browser video simulation.
+
+Interactive review used desktop 1440×900, tablet 768×1024, phone 390×844, supported dark theme.
+Reviewed timeline lanes/controls, grouping, opacity, numeric fields, build states and runtime.
+No page-level horizontal overflow; timeline pan is intentionally contained. Playback hides
+shuffle-only controls. Audio timelines explain the compiled-preview prerequisite and disable
+premature Start; preview validation has a visible in-progress state. Exact pause → blackout →
+restore position was **6.460822583 s** before and after, with PAUSED retained. Earlier manual
+Start-before-validation returned the expected guarded error and led to the UI clarification.
+The final native run has no pipeline warnings; normal browser use has no console errors.
+Server shutdown/reconnect and deliberately rejected actions are not counted as normal errors.
+Manual keyboard opacity review also caught stale numeric fields after a point move; the
+inspector now updates with the curve (1.00 → 0.95), with a browser regression assertion.
+The discarded review draft did not change the saved fixture.
+
+Ignored screenshot evidence:
+
+- `artifacts/timeline-editor-final-desktop.png`
+- `artifacts/timeline-editor-final-tablet.png`
+- `artifacts/timeline-playback-final-desktop.png`
+- `artifacts/timeline-playback-final-phone.png`
+- `artifacts/timeline-build-final-phone.png`
+- `artifacts/timeline-opacity-inspector-desktop.png`
+
+### Unverified boundaries and next gate
+
+The Pi was unavailable, as confirmed by the user. No Pi SSH/Tailscale commands, remote
+activation, HDMI device configuration, fullscreen projector test or boot service occurred.
+GLES adapter contracts passed on desktop GL, **not on a Pi EGL context**. Pi hardware decode,
+HDMI clock/output/offset, visible/audible loop seam, physical touch/network behavior, thermal
+throttling, one-hour soak, reboot and real power interruption remain unverified. Deployment
+network-loss/activation tests use local files or mocked HTTP; real private Serve connectivity
+remains a device/permission gate. Long-form production media throughput is also unmeasured.
+
+The safest next milestone is the [Pi 4 commissioning checklist](pi-commissioning.md), starting
+with GPU/EGL/GLES and single-stream HDMI playback before approving deployment/performance.
+Remaining deliberate limits include RGB copies (no zero-copy claim), phone timeline overview,
+YAML/JSON for topology creation, no NLE/remote build worker/external lighting protocols,
+no automatic pruning of old deployments, and no installed unattended startup service.

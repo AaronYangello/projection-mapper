@@ -1,6 +1,9 @@
 export type Named = { id: string; name: string; enabled: boolean };
 export type Viewport = { x: number; y: number; width: number; height: number };
 export type Surface = Named & {
+  role: "media" | "lighting";
+  shape: "rectangle" | "circle";
+  light: { color: string };
   projector_id: string;
   logical: { width: number; height: number };
   mapping: Record<
@@ -26,7 +29,7 @@ export type Project = {
   projectors: (Named & { viewport: Viewport })[];
   surfaces: Surface[];
   scenes: (Named & {
-    type: "color" | "image" | "video";
+    type: "color" | "image" | "video" | "audio";
     color?: string;
     tags: string[];
     path?: string;
@@ -45,6 +48,7 @@ export type Project = {
   })[];
   show: {
     mode: string;
+    timeline: Timeline;
     max_simultaneous: number;
     auto_start: boolean;
     fade_in_seconds: number;
@@ -68,6 +72,36 @@ export type Cue = {
   gap: number;
 };
 export type Status = {
+  deployment_kind?: "preview" | "installed" | null;
+  system?: {
+    cpu_percent: number;
+    memory_bytes: number;
+    memory_measurement: string;
+    free_disk_bytes: number;
+    temperature_c: number | null;
+    throttling: string | null;
+  };
+  mode: string;
+  deployment?: {
+    id: string;
+    source_project: { name: string };
+    encoder_backend: string;
+  } | null;
+  timeline: null | {
+    position: number;
+    duration: number;
+    loop: boolean;
+    cycle: number;
+    ended: boolean;
+    layers: {
+      id: string;
+      surface_id: string;
+      source_id: string | null;
+      opacity: number;
+      role: string;
+    }[];
+    upcoming: { time: number; surface_id: string; kind: string }[];
+  };
   state: string;
   transport: string;
   blackout: boolean;
@@ -88,6 +122,8 @@ export type Status = {
     gpu?: string;
     output_size?: number[];
     warning?: string;
+    timeline_clock?: Record<string, any>;
+    graphics?: Record<string, any>;
     decoder?: {
       state: string;
       backend: string;
@@ -108,7 +144,7 @@ export type MediaAsset = {
   id: string;
   name: string;
   path: string;
-  type: "video" | "image";
+  type: "video" | "image" | "audio";
   error: string | null;
   thumbnail: boolean;
   bytes?: number;
@@ -117,4 +153,58 @@ export type MediaAsset = {
   duration_seconds?: number;
   fps?: number;
   codec?: string;
+};
+
+export type OpacityKey = {
+  time_seconds: number;
+  value: number;
+  interpolation: "linear" | "hold";
+};
+export type Clip = {
+  id: string;
+  scene_id: string;
+  start_seconds: number;
+  source_in_seconds: number;
+  duration_seconds: number;
+};
+export type Track = {
+  id: string;
+  surface_id: string;
+  clips: Clip[];
+  opacity: { default: number; keyframes: OpacityKey[] };
+};
+export type Timeline = {
+  duration_seconds: number;
+  loop: boolean;
+  track_order: string[];
+  tracks: Track[];
+  audio: null | {
+    scene_id: string;
+    start_seconds: number;
+    source_in_seconds: number;
+    duration_seconds: number;
+    volume: number;
+    muted: boolean;
+    sync_offset_ms: number;
+  };
+};
+export type Capabilities = {
+  deployment_write: boolean;
+  deployment_reason: string | null;
+  role: string;
+  timeline_edit: boolean;
+  compiler: boolean;
+  compiler_reason: string | null;
+  media_upload: boolean;
+  deploy: boolean;
+  physical_pi_verified: boolean;
+};
+export type Job = {
+  id: string;
+  kind: string;
+  state: string;
+  progress: number;
+  message: string;
+  error?: string;
+  result?: Record<string, any>;
 };

@@ -20,3 +20,9 @@ projects/*/media/*.webm
 
 frontend/test-results/
 frontend/playwright-report/
+
+projects/*/builds/
+projects/*/runtime-data/
+projects/*/media/.uploads/
+projects/*/media/upload-*
+appliance-data/

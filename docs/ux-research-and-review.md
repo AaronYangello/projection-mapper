@@ -87,7 +87,35 @@ synthetic media only in the copied review project. User project configuration is
 
 ## Remaining limits
 
-File import still uses the local project media folder; there is no upload/file-management UI.
+At the v0.2 baseline, import used the local folder. v0.3 adds explicit streamed upload;
+remote deletion and general file management remain out of scope.
 The media inspector shows a representative still thumbnail, not a private video audition player
 or trim timeline. Advanced JSON still handles adding/removing topology and detailed ambient
 profiles. These remain visible capability boundaries rather than disconnected controls.
+
+## Timeline and deployment review · v0.3
+
+The new Show workspace extends the existing Playback-centered navigation. Its Shuffle and
+Timeline tabs edit saved definitions without activating them. Use this mode is explicit and
+stopped-only. Source editing remains in third-party NLEs; this workspace aligns tracks,
+master audio, lights and full-surface opacity. A local controlled view adapter avoids exposing
+NLE tools that the engine does not implement. The bounded MIT/React-compatibility/grouping/
+keyboard spike for react-timeline-editor is recorded in [implementation decisions](timeline-implementation.md).
+
+The design applies the earlier research to concrete tasks: stable surface/projector names,
+absolute time with numeric alternatives, snap/zoom/pan, visible opacity curves, explicit
+save/discard/conflict handling, and simple fade/visible/dark actions. Projector groups cannot
+become accidental drag/drop reassignment targets. Phone authoring is a labeled overview;
+blackout, runtime, mapping, uploads and deployment retain usable controls.
+
+Build feedback distinguishes expensive video changes from audio remux, metadata changes and
+mapping-only edits. Native browser export streams files rather than loading whole bundles in
+JavaScript. Target secrets are masked behind Edit. Deployment confirmation names the target,
+new bundle and prior state, and the result reads back the destination ID. Disabled capability
+controls explain compiler/auth requirements. Operational diagnostics stay secondary to editing.
+
+Final evidence and exact test counts are in [verification](verification.md). Reviews use the
+supported dark theme, 1440×900 desktop, 768×1024 tablet and 390×844 phone. Interactive native
+review uses an isolated four-video/sixteen-light fixture; browser regression tests use a
+disposable API-only fixture. Synthetic remote confirmation tests are not real Pi deployment.
+No user approval or physical-device usability result is inferred from automated checks.

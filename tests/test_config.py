@@ -100,4 +100,4 @@ def test_atomic_round_trip_and_backup(store, demo):
 
 def test_unknown_schema_rejected():
     with pytest.raises(ValueError, match="Unsupported"):
-        migrate({"schema_version": 2})
+        migrate({"schema_version": 99})

@@ -58,6 +58,7 @@ class Scheduler:
                 for s in project.surfaces
                 if s.enabled
                 and s.foreground_enabled
+                and s.role == "media"
                 and s.projector_id in projectors
                 and self.settings.surfaces.accepts(s.tags)
             ],
@@ -68,6 +69,7 @@ class Scheduler:
                 s.id
                 for s in project.scenes
                 if s.enabled
+                and s.type != "audio"
                 and self.settings.scenes.accepts(s.tags)
                 and s.id not in (unavailable or set())
                 and (s.type != "video" or s.id in self.media_durations)

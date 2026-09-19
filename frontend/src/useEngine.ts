@@ -22,6 +22,10 @@ export function useEngine() {
     return data;
   }, []);
   useEffect(() => {
+    if (status && status.revision !== revision)
+      void load().catch((e) => setError(e.message));
+  }, [status?.revision, revision, load]);
+  useEffect(() => {
     let disposed = false,
       socket: WebSocket | undefined,
       retry: ReturnType<typeof setTimeout>;

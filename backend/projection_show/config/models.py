@@ -5,6 +5,9 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .migrations import migrate
+from .timeline import Timeline
+
 Unit = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 Seconds = Annotated[float, Field(ge=0, le=3600, allow_inf_nan=False)]
 Dimension = Annotated[int, Field(ge=16, le=8192)]
@@ -69,6 +72,11 @@ class LogicalSize(Model):
     height: Dimension = 1080
 
 
+class Light(Model):
+    color: Color = "#ffffff"
+    # Fixed-color today. A later version can add color automation here.
+
+
 class Surface(Named):
     projector_id: Identifier
     logical: LogicalSize = Field(default_factory=LogicalSize)
@@ -76,6 +84,9 @@ class Surface(Named):
     tags: list[str] = Field(default_factory=list)
     ambient_profile: Identifier | None = None
     foreground_enabled: bool = True
+    role: Literal["media", "lighting"] = "media"
+    shape: Literal["rectangle", "circle"] = "rectangle"
+    light: Light = Field(default_factory=Light)
 
 
 class Ambient(Named):
@@ -138,7 +149,11 @@ class VideoScene(FileScene):
         return self
 
 
-Scene = Annotated[ColorScene | ImageScene | VideoScene, Field(discriminator="type")]
+class AudioScene(FileScene):
+    type: Literal["audio"]
+
+
+Scene = Annotated[ColorScene | ImageScene | VideoScene | AudioScene, Field(discriminator="type")]
 
 
 class Range(Model):
@@ -163,7 +178,8 @@ class Selector(Model):
 
 
 class Show(Model):
-    mode: Literal["shuffle_bag"] = "shuffle_bag"
+    mode: Literal["shuffle_bag", "timeline"] = "shuffle_bag"
+    timeline: Timeline = Field(default_factory=Timeline)
     max_simultaneous: Literal[1] = 1
     auto_start: bool = True
     fade_in_seconds: Seconds = 2.5
@@ -183,7 +199,7 @@ class Show(Model):
 
 
 class Project(Model):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     id: Identifier
     name: str = Field(min_length=1, max_length=120)
     description: str = ""
@@ -193,6 +209,13 @@ class Project(Model):
     ambient_profiles: list[Ambient] = Field(default_factory=list)
     scenes: list[Scene] = Field(default_factory=list)
     show: Show = Field(default_factory=Show)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_version(cls, data):
+        if isinstance(data, dict) and "schema_version" in data:
+            return migrate(data)
+        return data
 
     @field_validator("scenes", mode="before")
     @classmethod
@@ -217,9 +240,32 @@ class Project(Model):
                 raise ValueError(f"Surface {s.id} references missing projector {s.projector_id}")
             if s.ambient_profile and s.ambient_profile not in ambient:
                 raise ValueError(f"Surface {s.id} references missing ambient {s.ambient_profile}")
+        surfaces = {s.id: s for s in self.surfaces}
+        scenes = {s.id: s for s in self.scenes}
+        for track in self.show.timeline.tracks:
+            surface = surfaces.get(track.surface_id)
+            if not surface or not surface.enabled or not projectors[surface.projector_id].enabled:
+                raise ValueError(f"Track {track.id}: destination surface must exist and be enabled")
+            if surface.role == "lighting" and track.clips:
+                raise ValueError(f"Track {track.id}: lighting surfaces cannot contain media clips")
+            for clip in track.clips:
+                scene = scenes.get(clip.scene_id)
+                if not scene or not scene.enabled or scene.type == "audio":
+                    raise ValueError(
+                        f"Clip {clip.id}: select an enabled video, image, or color scene"
+                    )
+                if scene.type != "video" and clip.source_in_seconds:
+                    raise ValueError(f"Clip {clip.id}: source trim applies only to video")
+        audio = self.show.timeline.audio
+        if audio:
+            source = scenes.get(audio.scene_id)
+            if not source or not source.enabled or source.type != "audio":
+                raise ValueError("Master audio must reference an enabled audio scene")
         # Bound GPU allocation, not installation topology. All counts remain configuration driven.
         pixels = self.canvas.width * self.canvas.height + sum(
-            s.logical.width * s.logical.height for s in self.surfaces if s.enabled
+            s.logical.width * s.logical.height
+            for s in self.surfaces
+            if s.enabled and s.role == "media"
         )
         if pixels > 100_000_000:
             raise ValueError("Project exceeds the 100 megapixel render-target budget")

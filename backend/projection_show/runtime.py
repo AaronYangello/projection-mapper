@@ -5,12 +5,14 @@ import logging
 import threading
 import time
 from collections import deque
+from dataclasses import asdict
 
 from .calibration import Calibration, Preview
 from .config.models import Project
 from .config.store import ProjectStore
 from .media.catalog import playback_plan, scan
 from .scheduler import Scheduler
+from .timeline import ShuffleController, TimelineController, source_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,12 @@ class Runtime:
     def __init__(self, store: ProjectStore, bridge: RenderBridge):
         self.store, self.bridge = store, bridge
         self.project = store.load()
+        self.playback_options = {"audio_sink": "auto", "audio_device": ""}
+        self.audio_overrides = {}
+        self.deployment = None
+        self.deployed_project = None
+        self.machine_stats = None
+        self.deployment_warning = None
         self.media = scan(
             store.path.parent, [s.path for s in self.project.scenes if s.type != "color"]
         )
@@ -66,6 +74,7 @@ class Runtime:
         self.failed_media: set[str] = set()
         self.playback_generation = 1
         self.scheduler = self.new_scheduler()
+        self.controller = self.new_controller()
         self.state = "RUNNING" if self.project.show.auto_start else "READY"
         self.blackout = False
         self.pattern = "show"
@@ -89,6 +98,32 @@ class Runtime:
         delta, self.last_tick = max(0, now - self.last_tick), now
         if self.state != "PAUSED" and not self.blackout:
             self.ambient_time += delta
+        if self.mode == "timeline":
+            if self.state == "RUNNING" and not self.blackout:
+                health = self.bridge.telemetry().get("timeline_clock", {})
+                if (
+                    health.get("generation") == self.playback_generation
+                    and health.get("state") == "ERROR"
+                ):
+                    self.state = "PAUSED"
+                    self.event("Timeline fault", health.get("error", "Playback failed"))
+                elif self.deployment:
+                    if health.get("generation") == self.playback_generation and health.get(
+                        "state"
+                    ) in ("READY", "ENDED"):
+                        self.controller.seek(
+                            min(
+                                self.controller.project.show.timeline.duration_seconds,
+                                health["position"],
+                            )
+                        )
+                        self.controller.cycle = health.get("loop_count", 0)
+                else:
+                    self.controller.tick(delta)
+                if self.controller.ended:
+                    self.state = "PAUSED"
+            self.publish()
+            return
         if self.state == "RUNNING" and not self.blackout:
             decoder = self.bridge.telemetry().get("decoder", {})
             current = self.scheduler.current
@@ -112,6 +147,21 @@ class Runtime:
 
     def command(self, action: str) -> None:
         self.tick(time.monotonic())
+        if self.mode == "timeline" and action in ("start", "resume", "restart"):
+            if not self.deployment and self.project.show.timeline.audio:
+                raise ValueError(
+                    "Build the saved show and choose Preview built show for synchronized audio"
+                )
+            errors = [] if self.deployment else source_bounds(self.project, self.media)
+            if errors:
+                raise ValueError("; ".join(errors))
+            if self.controller.ended:
+                self.controller.seek(0)
+                self.playback_generation += 1
+        if self.mode == "timeline" and action in ("skip", "fade-out"):
+            raise ValueError(
+                "Timeline uses seek and surface opacity instead of shuffle cue commands"
+            )
         if action == "start":
             self.state = "RUNNING"
         elif action == "pause":
@@ -121,6 +171,7 @@ class Runtime:
             self.state = "RUNNING"
         elif action in ("stop", "restart"):
             self.scheduler = self.new_scheduler()
+            self.controller = self.new_controller()
             self.playback_generation += 1
             self.state = "READY" if action == "stop" else "RUNNING"
         elif action == "skip":
@@ -139,10 +190,17 @@ class Runtime:
         self.publish()
 
     def apply(self, project: Project, *, persist: bool = True) -> None:
+        if self.deployment:
+            raise ValueError(
+                "Unload the active deployment before editing installation configuration"
+            )
         if self.calibration.session:
             raise ValueError("Finish calibration before applying project configuration")
         if self.state != "READY":
             raise ValueError("Stop the show before applying project configuration")
+        errors = source_bounds(project, self.media)
+        if errors:
+            raise ValueError("Timeline sources: " + "; ".join(errors))
         if persist:
             self.store.save(project)
         self.project = project
@@ -151,6 +209,7 @@ class Runtime:
         )
         self.failed_media.clear()
         self.scheduler = self.new_scheduler()
+        self.controller = self.new_controller()
         self.playback_generation += 1
         self.revision += 1
         self.render_revision += 1
@@ -164,6 +223,52 @@ class Runtime:
         self.event("Calibration started", surface_id)
         self.publish()
         return result
+
+    @property
+    def mode(self):
+        return "timeline" if self.deployment else self.project.show.mode
+
+    def deployment_project(self, validated):
+        from .timeline import bind_deployment
+
+        return bind_deployment(self.project, validated["automation"])
+
+    def install_deployment(self, validated, *, resume=False):
+        project = self.deployment_project(validated)
+        self.deployment = validated
+        self.deployed_project = project
+        self.controller = TimelineController(project)
+        self.state = "RUNNING" if resume else "READY"
+        self.playback_generation += 1
+        self.render_revision += 1
+        self.last_tick = time.monotonic()
+        self.event("Deployment loaded", validated["manifest"]["id"])
+        self.publish()
+
+    def unload_deployment(self):
+        if self.state != "READY" or self.calibration.session:
+            raise ValueError("Stop playback and finish mapping before unloading")
+        self.deployment = None
+        self.deployed_project = None
+        self.controller = self.new_controller()
+        self.playback_generation += 1
+        self.render_revision += 1
+        self.publish()
+
+    def new_controller(self):
+        return (
+            TimelineController(self.deployed_project or self.project)
+            if self.mode == "timeline"
+            else ShuffleController(self.scheduler)
+        )
+
+    def seek(self, seconds: float):
+        if self.mode != "timeline":
+            raise ValueError("Seek is available in timeline mode")
+        self.controller.seek(seconds)
+        self.playback_generation += 1
+        self.last_tick = time.monotonic()
+        self.publish()
 
     def new_scheduler(self) -> Scheduler:
         return Scheduler(
@@ -179,6 +284,7 @@ class Runtime:
         )
         self.failed_media.clear()
         self.scheduler = self.new_scheduler()
+        self.controller = self.new_controller()
         self.playback_generation += 1
         self.event("Media indexed", f"{len(entries)} files")
         self.publish()
@@ -203,6 +309,8 @@ class Runtime:
         return {"project": self.project.model_dump(mode="json"), "revision": self.revision}
 
     def play_media(self, surface_id: str, scene_id: str) -> None:
+        if self.mode != "shuffle_bag":
+            raise ValueError("Manual media playback is available in Shuffle mode")
         surface = next((s for s in self.project.surfaces if s.id == surface_id), None)
         scene = next((s for s in self.project.scenes if s.id == scene_id), None)
         if (
@@ -212,7 +320,12 @@ class Runtime:
             or not any(p.id == surface.projector_id and p.enabled for p in self.project.projectors)
         ):
             raise ValueError("Select an enabled foreground surface on an enabled projector")
-        if not scene or not scene.enabled or scene_id in self.unavailable_media | self.failed_media:
+        if (
+            not scene
+            or scene.type == "audio"
+            or not scene.enabled
+            or scene_id in self.unavailable_media | self.failed_media
+        ):
             raise ValueError("Scene is unavailable; rescan media after fixing the file")
         self.scheduler.play(surface_id, scene_id)
         self.state = "RUNNING"
@@ -248,6 +361,8 @@ class Runtime:
         result = self.scheduler.snapshot()
         renderer = self.bridge.telemetry()
         warnings = []
+        if self.deployment_warning:
+            warnings.append(self.deployment_warning)
         warnings.extend(self.media_warnings)
         if self.failed_media:
             warnings.append(
@@ -258,7 +373,11 @@ class Runtime:
             warnings.append("Native renderer is " + renderer["status"].lower())
         if renderer.get("warning"):
             warnings.append(renderer["warning"])
-        if not self.scheduler.surfaces.items or not self.scheduler.scenes.items:
+        if self.mode == "timeline" and renderer.get("timeline_clock", {}).get("error"):
+            warnings.append("Timeline playback: " + renderer["timeline_clock"]["error"])
+        if self.mode == "shuffle_bag" and (
+            not self.scheduler.surfaces.items or not self.scheduler.scenes.items
+        ):
             warnings.append(
                 "No eligible surface/scene pair. Check enabled flags and tag selectors."
             )
@@ -266,6 +385,13 @@ class Runtime:
             warnings.append(f"Test pattern active: {self.pattern}. Return to Show to see cues.")
         result.update(
             {
+                "deployment": self.deployment["manifest"] if self.deployment else None,
+                "system": self.machine_stats,
+                "deployment_kind": ("preview" if self.deployment.get("preview") else "installed")
+                if self.deployment
+                else None,
+                "mode": self.mode,
+                "timeline": self.controller.snapshot() if self.mode == "timeline" else None,
                 "state": "BLACKOUT" if self.blackout else self.state,
                 "transport": self.state,
                 "blackout": self.blackout,
@@ -288,10 +414,29 @@ class Runtime:
         )
         return result
 
+    def render_project(self):
+        data = self.project.model_dump(mode="json")
+        if self.deployment:
+            definitions = {s["id"]: s for s in self.deployment["automation"]["surfaces"]}
+            data["surfaces"] = [{**s, **definitions.get(s["id"], {})} for s in data["surfaces"]]
+        return data
+
     def publish(self) -> None:
         self.bridge.publish(
             {
-                "project": self.project.model_dump(mode="json"),
+                "playback_options": self.playback_options.copy(),
+                "audio_overrides": self.audio_overrides.copy(),
+                "source_durations": {
+                    s.id: e["duration_seconds"]
+                    for s in self.project.scenes
+                    if s.type == "video"
+                    for e in self.media
+                    if e["path"] == s.path and not e.get("error")
+                },
+                "deployment": copy.deepcopy(self.deployment),
+                "layers": [asdict(layer) for layer in self.controller.layers()],
+                "timeline": self.controller.snapshot() if self.mode == "timeline" else None,
+                "project": self.render_project(),
                 "revision": self.render_revision,
                 "geometry_revision": self.calibration.generation,
                 "calibration": self.calibration.render_state(),

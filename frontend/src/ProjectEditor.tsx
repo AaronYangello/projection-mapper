@@ -341,6 +341,46 @@ export function ProjectEditor({
                         </select>
                       </label>
                       <label>
+                        Surface role
+                        <select
+                          value={surface.role}
+                          onChange={(e) =>
+                            change({
+                              role: e.target.value as "media" | "lighting",
+                            })
+                          }
+                        >
+                          <option value="media">Media</option>
+                          <option value="lighting">Lighting</option>
+                        </select>
+                      </label>
+                      <label>
+                        Shape
+                        <select
+                          value={surface.shape}
+                          onChange={(e) =>
+                            change({
+                              shape: e.target.value as "rectangle" | "circle",
+                            })
+                          }
+                        >
+                          <option value="rectangle">Rectangle</option>
+                          <option value="circle">Circle</option>
+                        </select>
+                      </label>
+                      {surface.role === "lighting" && (
+                        <label>
+                          Light color
+                          <input
+                            type="color"
+                            value={surface.light.color}
+                            onChange={(e) =>
+                              change({ light: { color: e.target.value } })
+                            }
+                          />
+                        </label>
+                      )}
+                      <label>
                         Background
                         <select
                           value={surface.ambient_profile ?? ""}

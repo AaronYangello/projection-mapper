@@ -13,8 +13,10 @@ from PIL import Image
 from ..mapping import color_rgb, homography
 from ..runtime import RenderBridge
 from . import shaders
+from .context import create_context, graphics_report
 from .labels import calibration_label
 from .media import MediaPlayback
+from .timeline import TimelineRenderer
 
 
 @dataclass
@@ -25,35 +27,6 @@ class Target:
     def release(self):
         self.framebuffer.release()
         self.texture.release()
-
-
-def create_context(*, width=1280, height=720, visible=True, fullscreen=False, monitor=0):
-    if not glfw.init():
-        raise RuntimeError("GLFW could not initialize. Start a desktop session or use --api-only.")
-    glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
-    glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
-    glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
-    glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, True)
-    glfw.window_hint(glfw.VISIBLE, visible)
-    glfw.window_hint(glfw.COCOA_RETINA_FRAMEBUFFER, False)
-    selected = None
-    if fullscreen:
-        monitors = glfw.get_monitors()
-        if monitor >= len(monitors):
-            glfw.terminate()
-            raise RuntimeError(f"Monitor index {monitor} is not connected")
-        selected = monitors[monitor]
-        mode = glfw.get_video_mode(selected)
-        width, height = mode.size.width, mode.size.height
-    window = glfw.create_window(width, height, "Projection Show · Native Output", selected, None)
-    if not window:
-        glfw.terminate()
-        raise RuntimeError("OpenGL 3.3 window creation failed")
-    glfw.make_context_current(window)
-    glfw.swap_interval(1 if visible else 0)
-    if fullscreen:
-        glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_HIDDEN)
-    return window, moderngl.create_context(require=330)
 
 
 class Engine:
@@ -92,6 +65,7 @@ class Engine:
             if name != "particles"
         }
         self.playback = MediaPlayback(ctx, self.vertices)
+        self.timeline = TimelineRenderer(ctx, self.vertices)
 
     def target(self, width: int, height: int) -> Target:
         limit = self.ctx.info["GL_MAX_TEXTURE_SIZE"]
@@ -115,12 +89,20 @@ class Engine:
             if not surface["enabled"]:
                 continue
             sid = surface["id"]
-            self.targets[sid] = self.target(**surface["logical"])
+            self.targets[sid] = (
+                self.target(64, 64)
+                if surface.get("role") == "lighting"
+                else self.target(**surface["logical"])
+            )
             mapping = surface["mapping"]
             self.transforms[sid] = homography(
                 [mapping[k] for k in ("top_left", "top_right", "bottom_right", "bottom_left")]
             )
-            profile = profiles.get(surface["ambient_profile"])
+            profile = (
+                profiles.get(surface["ambient_profile"])
+                if surface.get("role") != "lighting"
+                else None
+            )
             if profile and profile["type"] == "particles" and profile["count"]:
                 rng = np.random.default_rng((profile["seed"] + zlib.crc32(sid.encode())) % 2**32)
                 data = rng.random((profile["count"], 4)).astype("f4")
@@ -155,6 +137,14 @@ class Engine:
         ctx.scissor = None
         ctx.disable(moderngl.BLEND)
         self.master.framebuffer.clear(0, 0, 0, 1)
+        if frame.get("timeline"):
+            self.playback.clear()
+            self.timeline.draw(frame, self)
+            return
+        if self.timeline.pipeline:
+            self.timeline.pipeline.close()
+            self.timeline.pipeline = None
+        self.timeline.close_sources()
         if frame["blackout"]:
             return
         self.playback.update(frame)
@@ -169,6 +159,16 @@ class Engine:
             sid = surface["id"]
             if calibration and calibration["black_others"] and calibration["surface_id"] != sid:
                 continue
+            if (
+                surface.get("role") == "lighting"
+                and frame["pattern"] == "show"
+                and not (
+                    calibration
+                    and calibration["surface_id"] == sid
+                    and calibration["pattern"] != "show"
+                )
+            ):
+                continue  # Lighting brightness is exclusively timeline surface automation.
             target = self.targets[sid]
             target.framebuffer.use()
             ctx.scissor = None
@@ -296,6 +296,7 @@ class Engine:
 
     def close(self):
         self.playback.close()
+        self.timeline.close()
         self.release_targets()
         for vao in self.quads.values():
             vao.release()
@@ -312,8 +313,11 @@ def run_renderer(
     fullscreen=False,
     monitor=0,
     duration: float | None = None,
+    graphics_backend="desktop",
 ):
-    window, ctx = create_context(visible=visible, fullscreen=fullscreen, monitor=monitor)
+    window, ctx = create_context(
+        visible=visible, fullscreen=fullscreen, monitor=monitor, backend=graphics_backend
+    )
     engine = Engine(ctx)
     start = sample = time.monotonic()
     next_frame = start
@@ -331,6 +335,8 @@ def run_renderer(
             frame = bridge.read()
             if frame:
                 engine.render(frame)
+                if frame.get("timeline"):
+                    bridge.report(timeline_clock=dict(engine.timeline.health))
                 if reported_geometry != engine.geometry_revision:
                     bridge.report(geometry_revision=engine.geometry_revision)
                     reported_geometry = engine.geometry_revision
@@ -358,10 +364,15 @@ def run_renderer(
                         fps=round(frames / (began - sample), 1),
                         late_frames=late,
                         gpu=ctx.info["GL_RENDERER"],
+                        graphics=graphics_report(ctx, size, graphics_backend),
                         output_size=list(size),
                         warning=warning,
                         geometry_revision=engine.geometry_revision,
-                        decoder=dict(engine.playback.health),
+                        decoder=dict(
+                            engine.timeline.health
+                            if frame.get("timeline")
+                            else engine.playback.health
+                        ),
                     )
                     frames, sample = 0, began
                 # Accumulate a deadline so timer oversleep doesn't lower the requested frame rate.

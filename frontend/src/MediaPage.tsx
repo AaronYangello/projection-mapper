@@ -8,7 +8,9 @@ import {
   Save,
   Search,
   Copy,
+  Music2,
 } from "lucide-react";
+import { UploadPanel } from "./UploadPanel";
 import { getToken, request } from "./api";
 import { DiscardDialog, useUnsavedWarning } from "./editing";
 import type { MediaAsset, Project, Status } from "./types";
@@ -43,7 +45,13 @@ function Thumbnail({ asset }: { asset: MediaAsset }) {
     <img src={url} alt="" />
   ) : (
     <div className="media-placeholder">
-      {asset.type === "video" ? <Film size={28} /> : <ImageIcon size={28} />}
+      {asset.type === "video" ? (
+        <Film size={28} />
+      ) : asset.type === "audio" ? (
+        <Music2 size={28} />
+      ) : (
+        <ImageIcon size={28} />
+      )}
     </div>
   );
 }
@@ -78,6 +86,7 @@ export function MediaPage({
     (s) =>
       s.enabled &&
       s.foreground_enabled &&
+      s.role === "media" &&
       project.projectors.some((p) => p.id === s.projector_id && p.enabled),
   );
   const [surfaceId, setSurfaceId] = useState(eligible[0]?.id ?? "");
@@ -152,6 +161,7 @@ export function MediaPage({
   }
   return (
     <section className="media-page">
+      <UploadPanel enabled={canEdit && !dirty} />
       <div className="section-heading">
         <div>
           <h2>
@@ -269,6 +279,7 @@ export function MediaPage({
                 <option value="all">All files</option>
                 <option value="video">Videos</option>
                 <option value="image">Images</option>
+                <option value="audio">Audio</option>
                 <option value="attention">Needs attention</option>
               </select>
             </label>
@@ -297,7 +308,9 @@ export function MediaPage({
                     <span>
                       {item.error
                         ? "Needs attention"
-                        : `${item.width} × ${item.height}${item.type === "video" ? ` · ${item.duration_seconds?.toFixed(1)} s` : " · Image"}`}
+                        : item.type === "audio"
+                          ? `Audio · ${item.duration_seconds?.toFixed(1)} s`
+                          : `${item.width} × ${item.height}${item.type === "video" ? ` · ${item.duration_seconds?.toFixed(1)} s` : " · Image"}`}
                     </span>
                     <span className="media-membership">
                       {source
@@ -333,7 +346,11 @@ export function MediaPage({
                 {!asset.error && (
                   <div className="media-metadata">
                     <span>
-                      {asset.type === "video" ? "Video · muted" : "Image"}
+                      {asset.type === "audio"
+                        ? "Master audio source"
+                        : asset.type === "video"
+                          ? "Video · muted"
+                          : "Image"}
                     </span>
                     <span>{asset.codec}</span>
                     <span>
@@ -366,7 +383,9 @@ export function MediaPage({
                           });
                           await reload();
                           setMessage(
-                            "Added to the show. Choose a surface to play it.",
+                            asset.type === "audio" || status.mode === "timeline"
+                              ? "Source added. Assign it in Show → Timeline."
+                              : "Added to the show. Choose a surface to play it.",
                           );
                         })
                       }
@@ -377,57 +396,67 @@ export function MediaPage({
                   </>
                 ) : (
                   <>
-                    <div className="media-play">
-                      <label>
-                        Target surface
-                        <select
-                          value={surfaceId}
-                          onChange={(e) => setSurfaceId(e.target.value)}
-                        >
-                          {eligible.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <button
-                        className="primary"
-                        disabled={
-                          busy ||
-                          !connected ||
-                          !surfaceId ||
-                          !scene.enabled ||
-                          dirty
-                        }
-                        onClick={() =>
-                          void action(async () => {
-                            await request("manual/play", {
-                              method: "POST",
-                              body: JSON.stringify({
-                                surface_id: surfaceId,
-                                scene_id: scene.id,
-                              }),
-                            });
-                            setMessage(
-                              `Playing ${scene.name} on ${eligible.find((s) => s.id === surfaceId)?.name}.`,
-                            );
-                          })
-                        }
-                      >
-                        <Play size={16} />
-                        Play on surface
-                      </button>
-                    </div>
-                    <p className="hint">
-                      Replaces the current cue, then returns to the automatic
-                      queue.{" "}
-                      {dirty
-                        ? "Save or discard edits before playing."
-                        : status.blackout
-                          ? "Blackout is active; restore output to see it."
-                          : "Uses the saved settings below."}
-                    </p>
+                    {scene.type === "audio" || status.mode === "timeline" ? (
+                      <p className="hint">
+                        Assign this source in Show → Timeline. Audio belongs in
+                        the Master audio lane; media belongs on a surface track.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="media-play">
+                          <label>
+                            Target surface
+                            <select
+                              value={surfaceId}
+                              onChange={(e) => setSurfaceId(e.target.value)}
+                            >
+                              {eligible.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <button
+                            className="primary"
+                            disabled={
+                              busy ||
+                              !connected ||
+                              !surfaceId ||
+                              status.mode === "timeline" ||
+                              !scene.enabled ||
+                              dirty
+                            }
+                            onClick={() =>
+                              void action(async () => {
+                                await request("manual/play", {
+                                  method: "POST",
+                                  body: JSON.stringify({
+                                    surface_id: surfaceId,
+                                    scene_id: scene.id,
+                                  }),
+                                });
+                                setMessage(
+                                  `Playing ${scene.name} on ${eligible.find((s) => s.id === surfaceId)?.name}.`,
+                                );
+                              })
+                            }
+                          >
+                            <Play size={16} />
+                            Play on surface
+                          </button>
+                        </div>
+                        <p className="hint">
+                          Replaces the current cue, then returns to the
+                          automatic queue.{" "}
+                          {dirty
+                            ? "Save or discard edits before playing."
+                            : status.blackout
+                              ? "Blackout is active; restore output to see it."
+                              : "Uses the saved settings below."}
+                        </p>
+                      </>
+                    )}
                     {!eligible.length && (
                       <p className="notice">
                         Enable a foreground surface in Project before playing
@@ -493,24 +522,28 @@ export function MediaPage({
                             />
                             Enabled in show
                           </label>
-                          <label>
-                            Fit to surface
-                            <select
-                              value={draft.fit}
-                              onChange={(e) => update({ fit: e.target.value })}
-                            >
-                              <option value="cover">Fill · crop edges</option>
-                              <option value="contain">
-                                Fit · show entire image
-                              </option>
-                              <option value="stretch">
-                                Stretch · may distort
-                              </option>
-                              <option value="native">
-                                Native · original pixel size
-                              </option>
-                            </select>
-                          </label>
+                          {draft.type !== "audio" && (
+                            <label>
+                              Fit to surface
+                              <select
+                                value={draft.fit}
+                                onChange={(e) =>
+                                  update({ fit: e.target.value })
+                                }
+                              >
+                                <option value="cover">Fill · crop edges</option>
+                                <option value="contain">
+                                  Fit · show entire image
+                                </option>
+                                <option value="stretch">
+                                  Stretch · may distort
+                                </option>
+                                <option value="native">
+                                  Native · original pixel size
+                                </option>
+                              </select>
+                            </label>
+                          )}
                           {draft.type === "video" && (
                             <>
                               <label>
@@ -592,37 +625,47 @@ export function MediaPage({
                             </>
                           )}
                           <details>
-                            <summary>Crop position & tags</summary>
-                            <p className="hint">
-                              Crop center: 0 is left/top, 1 is right/bottom.
-                              Centered is 0.5. Applies to cropped content;
-                              letterboxing stays centered.
-                            </p>
-                            <div className="trim-fields">
-                              {(["X", "Y"] as const).map((axis, i) => (
-                                <label key={axis}>
-                                  Crop center {axis}
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="1"
-                                    step="any"
-                                    disabled={
-                                      draft.fit === "stretch" ||
-                                      draft.fit === "contain"
-                                    }
-                                    value={draft.focal_point?.[i] ?? 0.5}
-                                    onChange={(e) => {
-                                      const point: [number, number] = [
-                                        ...(draft.focal_point ?? [0.5, 0.5]),
-                                      ];
-                                      point[i] = Number(e.target.value);
-                                      update({ focal_point: point });
-                                    }}
-                                  />
-                                </label>
-                              ))}
-                            </div>
+                            <summary>
+                              {draft.type === "audio"
+                                ? "Tags"
+                                : "Crop position & tags"}
+                            </summary>
+                            {draft.type !== "audio" && (
+                              <>
+                                <p className="hint">
+                                  Crop center: 0 is left/top, 1 is right/bottom.
+                                  Centered is 0.5. Applies to cropped content;
+                                  letterboxing stays centered.
+                                </p>
+                                <div className="trim-fields">
+                                  {(["X", "Y"] as const).map((axis, i) => (
+                                    <label key={axis}>
+                                      Crop center {axis}
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="1"
+                                        step="any"
+                                        disabled={
+                                          draft.fit === "stretch" ||
+                                          draft.fit === "contain"
+                                        }
+                                        value={draft.focal_point?.[i] ?? 0.5}
+                                        onChange={(e) => {
+                                          const point: [number, number] = [
+                                            ...(draft.focal_point ?? [
+                                              0.5, 0.5,
+                                            ]),
+                                          ];
+                                          point[i] = Number(e.target.value);
+                                          update({ focal_point: point });
+                                        }}
+                                      />
+                                    </label>
+                                  ))}
+                                </div>
+                              </>
+                            )}
                             <label>
                               Tags (comma separated)
                               <input

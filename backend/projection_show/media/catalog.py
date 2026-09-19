@@ -2,12 +2,14 @@
 
 import hashlib
 import math
+import re
 from pathlib import Path
 
 import av
 from PIL import Image, ImageOps
 
 VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".mkv", ".webm", ".avi"}
+AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
@@ -21,7 +23,7 @@ def resolve_media(root: Path, relative: str) -> Path:
         raise ValueError("Media symlink escapes the project's media directory")
     if not target.is_file():
         raise ValueError("Media file is missing or is not a regular file")
-    if target.suffix.lower() not in VIDEO_EXTENSIONS | IMAGE_EXTENSIONS:
+    if target.suffix.lower() not in VIDEO_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS:
         raise ValueError("Unsupported media extension")
     return target
 
@@ -37,14 +39,38 @@ def probe(root: Path, relative: str) -> dict:
     result = {
         "id": asset_id,
         "path": relative,
-        "name": Path(relative).stem,
-        "type": "image" if Path(relative).suffix.lower() in IMAGE_EXTENSIONS else "video",
+        "name": re.sub(r"^upload-[a-f0-9]{16}-", "", Path(relative).stem),
+        "type": "image"
+        if Path(relative).suffix.lower() in IMAGE_EXTENSIONS
+        else "audio"
+        if Path(relative).suffix.lower() in AUDIO_EXTENSIONS
+        else "video",
         "error": None,
         "thumbnail": False,
     }
     try:
         path = resolve_media(root, relative)
         result["bytes"] = path.stat().st_size
+        if result["type"] == "audio":
+            with open_video(path) as container:
+                stream = next(iter(container.streams.audio), None)
+                if not stream:
+                    raise ValueError("No audio stream")
+                duration = (
+                    float(stream.duration * stream.time_base)
+                    if stream.duration
+                    else float((container.duration or 0) / av.time_base)
+                )
+                if not math.isfinite(duration) or duration <= 0:
+                    raise ValueError("A finite positive audio duration is required")
+                next(container.decode(audio=0))
+                result.update(
+                    duration_seconds=duration,
+                    codec=stream.codec_context.name,
+                    channels=stream.codec_context.channels,
+                    sample_rate=stream.codec_context.sample_rate,
+                )
+            return result
         if result["type"] == "image":
             with Image.open(path) as image:
                 if image.width * image.height > 33_554_432:
@@ -117,7 +143,8 @@ def scan(root: Path, configured_paths: list[str] = ()) -> list[dict]:
         paths.update(
             str(p.relative_to(root))
             for p in folder.rglob("*")
-            if p.suffix.lower() in VIDEO_EXTENSIONS | IMAGE_EXTENSIONS
+            if not any(part.startswith(".") for part in p.relative_to(folder).parts)
+            and p.suffix.lower() in VIDEO_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS
         )
     if len(paths) > 500:
         raise ValueError("This milestone supports scanning up to 500 media files per project")

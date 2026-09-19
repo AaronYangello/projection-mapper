@@ -5,7 +5,7 @@ command -v python3 >/dev/null
 command -v npm >/dev/null
 python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'
 python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m pip install -e '.[dev,compiler]'
 (
   cd frontend
   npm ci

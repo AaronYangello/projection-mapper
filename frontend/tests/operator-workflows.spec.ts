@@ -39,6 +39,7 @@ for (const width of [1440, 768, 390])
     await page.setViewportSize({ width, height: width === 768 ? 1024 : 900 });
     for (const name of [
       "Playback",
+      "Show",
       "Mapping",
       "Media",
       "Project",
@@ -146,7 +147,7 @@ test("mapping nudge, undo, redo, leave protection and durable save", async ({
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   await save.click();
-  await expect(page.getByText("Mapping saved", { exact: true })).toBeVisible();
+  await expect(page.locator(".mapping-ack")).toHaveText(/Mapping saved/);
   const after = (await (await request.get("/api/project")).json()).project
     .surfaces[0].mapping.top_left[0];
   expect(after).toBeGreaterThan(before);

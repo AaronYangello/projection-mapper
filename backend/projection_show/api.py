@@ -15,10 +15,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from . import __version__
+from .authoring_api import routes
+from .build_api import routes as build_routes
 from .calibration import Preview
 from .config.models import Project
+from .diagnostics import HostStats
 from .media.catalog import scan
 from .runtime import Runtime
+from .services import Services
 
 
 class ProjectUpdate(BaseModel):
@@ -40,9 +44,20 @@ class MediaPlay(BaseModel):
     scene_id: str
 
 
-def create_app(runtime: Runtime, frontend: Path | None = None) -> FastAPI:
+def create_app(
+    runtime: Runtime, frontend: Path | None = None, *, services: Services | None = None
+) -> FastAPI:
+    services = services or Services(runtime)
+
     @asynccontextmanager
     async def lifespan(app):
+        stats = HostStats(runtime.store.path.parent)
+
+        async def sample_host():
+            while True:
+                runtime.machine_stats = await asyncio.to_thread(stats.sample)
+                await asyncio.sleep(2)
+
         async def ticker():
             import time
 
@@ -51,12 +66,20 @@ def create_app(runtime: Runtime, frontend: Path | None = None) -> FastAPI:
                 await asyncio.sleep(1 / runtime.project.canvas.refresh_rate)
 
         task = asyncio.create_task(ticker())
+        monitor = asyncio.create_task(sample_host())
         yield
         task.cancel()
+        monitor.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+        with contextlib.suppress(asyncio.CancelledError):
+            await monitor
+        await asyncio.to_thread(services.jobs.close)
 
     app = FastAPI(title="Projection Show Engine", version=__version__, lifespan=lifespan)
+    app.include_router(routes(runtime, services))
+    app.include_router(build_routes(runtime, services))
+    app.state.services = services
     token = os.environ.get("PROJECTION_SHOW_TOKEN", "")
 
     def authorized(headers) -> bool:
@@ -71,7 +94,10 @@ def create_app(runtime: Runtime, frontend: Path | None = None) -> FastAPI:
     @app.middleware("http")
     async def guard(request: Request, call_next):
         if request.url.path.startswith("/api/"):
-            if not authorized(request.headers):
+            # This one streaming download authenticates a short-lived HttpOnly cookie
+            # issued by an authenticated POST. Bearer tokens never enter download URLs.
+            download = request.method == "GET" and request.url.path == "/api/builds/download"
+            if not download and not authorized(request.headers):
                 return Response("Authentication required", status_code=401)
             if request.method not in ("GET", "HEAD", "OPTIONS") and not same_origin(
                 request.headers

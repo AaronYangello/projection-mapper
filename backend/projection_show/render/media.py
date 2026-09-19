@@ -138,9 +138,9 @@ class MediaPlayback:
         self.program["opacity"].value = opacity
         self.quad.render(moderngl.TRIANGLE_STRIP)
 
-    def close(self):
+    def close(self, *, wait=True):
         self.clear()
         for decoder in self.retired:
-            decoder.close()
+            decoder.close(wait=wait)
         self.quad.release()
         self.program.release()

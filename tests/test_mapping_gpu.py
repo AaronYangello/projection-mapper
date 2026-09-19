@@ -17,6 +17,131 @@ def test_homography_corners_and_interior():
     assert inverse[:2] / inverse[2] == pytest.approx([0.5, 0.5])
 
 
+def timeline_frame(demo):
+    import copy
+
+    f = frame(demo)
+    p = f["project"]
+    p["ambient_profiles"] = []
+    p["projectors"][0]["viewport"] = dict(x=0, y=0, width=320, height=240)
+    prototype = p["surfaces"][0]
+    p["surfaces"] = []
+    layers, regions = [], []
+
+    def surface(sid, box, role="media", shape="rectangle"):
+        s = copy.deepcopy(prototype)
+        x, y, w, h = box
+        s.update(
+            id=sid,
+            role=role,
+            shape=shape,
+            ambient_profile=None,
+            logical=dict(width=100, height=100),
+            light={"color": "#ffffff"},
+        )
+        s["mapping"] = dict(
+            top_left=[x, y],
+            top_right=[x + w, y],
+            bottom_right=[x + w, y + h],
+            bottom_left=[x, y + h],
+        )
+        p["surfaces"].append(s)
+        layers.append(
+            dict(
+                id=sid,
+                surface_id=sid,
+                source_id=sid if role == "media" else None,
+                clip_id=sid,
+                opacity=1 if role == "media" else 0.5,
+                role=role,
+                color="#ffffff",
+                shape=shape,
+            )
+        )
+
+    for i in range(4):
+        x, y = (i % 2) / 2, (i // 2) / 2
+        surface(f"video-{i}", (x, y, 0.5, 0.5))
+        regions.append(dict(clip_id=f"video-{i}", uv=[x, y, 0.5, 0.5]))
+    for i in range(16):
+        # All sixteen lights lie over the red atlas region, with separated samples.
+        surface(
+            f"light-{i}",
+            (0.02 + (i % 4) * 0.12, 0.02 + (i // 4) * 0.12, 0.08, 0.08),
+            "lighting",
+            "circle" if i % 2 else "rectangle",
+        )
+    f.update(timeline={"position": 1}, layers=layers, deployment={"atlas": {"regions": regions}})
+    return f
+
+
+@pytest.mark.gpu
+def test_one_atlas_four_regions_sixteen_lights_alpha_masks_and_mapping(gpu, demo, monkeypatch):
+    f = timeline_frame(demo)
+    pixels = np.zeros((64, 64, 3), dtype=np.uint8)
+    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+    for i, color in enumerate(colors):
+        x, y = (i % 2) * 32, (i // 2) * 32
+        pixels[y : y + 32, x : x + 32] = color
+    # Isolate GL sampling from decode: separate real pipeline integration tests cover decode.
+    monkeypatch.setattr(gpu.timeline, "update", lambda frame: None)
+    gpu.timeline.texture = gpu.ctx.texture((64, 64), 3, pixels.tobytes())
+    gpu.render(f)
+    image = np.array(gpu.image())
+    for i, color in enumerate(colors):
+        x, y = int(((i % 2) * 0.5 + 0.49) * 320), int(((i // 2) * 0.5 + 0.49) * 240)
+        assert image[y, x] == pytest.approx(color, abs=1)
+    for i in range(16):
+        x, y = (0.06 + (i % 4) * 0.12) * 320, (0.06 + (i // 4) * 0.12) * 240
+        assert image[int(y), int(x)] == pytest.approx([255, 128, 128], abs=1)
+        assert gpu.targets[f"light-{i}"].texture.size == (64, 64)
+    # Circle exterior preserves the red layer beneath, rather than painting black.
+    assert image[5, 46] == pytest.approx([255, 0, 0], abs=1)
+    f["layers"][1]["opacity"] = 0.25
+    gpu.render(f)
+    assert np.array(gpu.image())[60, 240] == pytest.approx([0, 64, 0], abs=1)
+    # Changing destination mapping changes pixels without touching the source atlas.
+    f["geometry_revision"] = 1
+    f["project"]["surfaces"][2]["mapping"] = dict(
+        top_left=[0.1, 0.6], top_right=[0.4, 0.6], bottom_right=[0.4, 0.9], bottom_left=[0.1, 0.9]
+    )
+    gpu.render(f)
+    assert tuple(np.array(gpu.image())[130, 10]) == (0, 0, 0)
+    f["blackout"] = True
+    gpu.render(f)
+    assert not np.array(gpu.image()).any()
+
+
+@pytest.mark.gpu
+def test_gles_resource_adapter_on_desktop_context(demo):
+    if os.environ.get("RUN_GPU_TESTS") != "1":
+        pytest.skip("Opt in to native context tests")
+    import glfw
+    from projection_show.render.context import create_context
+    from projection_show.render.engine import Engine
+    from projection_show.render.gles import Context, shader_source
+
+    window, desktop = create_context(width=320, height=240, visible=False)
+    engine = None
+    try:
+        adapter = Context((320, 240), dialect="desktop")
+        engine = Engine(adapter)
+        f = frame(demo)
+        f["project"]["ambient_profiles"] = []
+        engine.render(f)
+        assert tuple(np.array(engine.image())[120, 160]) == (255, 0, 0)
+        f["blackout"] = True
+        engine.render(f)
+        assert not np.array(engine.image()).any()
+        assert "#version 300 es" in shader_source("#version 330\nvoid main() {}", "gles")
+    finally:
+        if engine:
+            engine.close()
+        desktop.release()
+        glfw.destroy_window(window)
+        glfw.terminate()
+
+
 @pytest.fixture
 def gpu():
     if os.environ.get("RUN_GPU_TESTS") != "1":

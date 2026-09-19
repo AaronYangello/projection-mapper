@@ -2,7 +2,8 @@
 
 Projects live outside the Python package. Pass an explicit `--project /path/to/project.yaml`
 to select one. Copy `projects/demo/` for a new project; there is no project-switching UI yet.
-The API returns normalized JSON; disk storage is human-readable YAML, schema version 1.
+The API returns normalized JSON; disk storage is human-readable YAML, schema version 2. Valid v1 files migrate in memory; the next explicit save writes v2 and
+retains the old valid file as `.yaml.bak`. No implicit disk rewrite occurs.
 
 ## Contract
 
@@ -11,14 +12,15 @@ The API returns normalized JSON; disk storage is human-readable YAML, schema ver
 | `id`, `name`, `description` | Stable project ID, editable display name, description |
 | `canvas` | Width/height, refresh rate, fullscreen preference, zero-based monitor index |
 | `projectors[]` | Stable ID/name, enabled flag, integer-pixel viewport within the canvas |
-| `surfaces[]` | Projector ID, logical dimensions, normalized mapping, enabled/foreground flags, tags, ambient profile |
+| `surfaces[]` | Projector ID, logical dimensions, normalized mapping, enabled/foreground flags, tags, ambient profile, media/lighting role, shape and fixed light color |
 | `ambient_profiles[]` | `none`, `solid`, or `particles`; color, opacity, count, speed, size, drift, seed, foreground dimming |
-| `scenes[]` | Named enabled `color`, `image`, or `video` sources, arbitrary tags; file paths, fit and clip settings for media |
-| `show` | Shuffle-bag mode, one foreground cue, fades, hold/gap ranges, queue length, optional seed, tag selectors, auto-start |
+| `scenes[]` | Named enabled `color`, `image`, `video`, or `audio` sources, arbitrary tags; file paths, fit and clip settings for media |
+| `show` | Saved mode (`shuffle_bag` / `timeline`), existing flat shuffle settings, auto-start, and independent `timeline` definition |
 
 IDs contain letters, digits, underscores, or hyphens. Names may contain spaces and need not be
 unique. Referential validation is based on IDs. Unknown keys and unsupported types fail.
-Future configuration migration must be explicit; schema versions other than 1 are rejected.
+Migration is explicit in `config/migrations.py`; missing/unknown versions and v2-only fields
+in v1 input fail. See [exact schema, timeline validation and defaults](timeline.md).
 
 Projector viewports use top-left canvas coordinates. Surface corners use top-left projector
 coordinates normalized to [0,1] and ordered top_left, top_right, bottom_right, bottom_left.
@@ -28,7 +30,9 @@ they are not automatically rearranged. Surface rendering follows project array o
 
 Logical surface dimensions control texture resolution and particle sizes, not where a
 surface lands. Canvas and logical dimensions accept 16–8192 pixels, subject to an aggregate
-100 megapixel target budget and the actual GPU maximum texture size.
+100 megapixel target budget and the actual GPU maximum texture size. Lighting draws directly
+and does not allocate full logical-size framebuffers. Timeline clips refer only to enabled
+compatible surfaces; lighting cannot contain media clips, and audio cannot enter shuffle.
 
 Ambient particle speed and drift are normalized surface-units per second; size is logical
 pixels. A stable seed plus surface ID yields repeatable particle populations. Opacity and
@@ -38,7 +42,8 @@ foreground_opacity are 0–1. Foreground dimming interpolates with cue opacity.
 listed tag, with an empty list matching all; any excluded tag disqualifies an item. Enabled
 flags and projector status apply before tags. Empty eligibility produces a visible warning
 and ambient-only output. Hold minimum must be positive; fades and gaps may be zero. Timing
-values have an upper bound of one hour. This milestone supports exactly one foreground cue.
+values have an upper bound of one hour. Shuffle supports exactly one foreground cue. Timeline allows independent surface tracks;
+installation limits belong to [named build profiles](build-deploy.md).
 
 ## Safe editing
 

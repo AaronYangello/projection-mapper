@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: demo
 name: Seven planes
 description: A configurable study in light, motion, and perspective. Prototype Zero.
@@ -54,8 +54,8 @@ surfaces:
     - 0.07
     - 0.13
     top_right:
-    - 0.44
-    - 0.09
+    - 0.42821077095523585
+    - 0.2701237682590175
     bottom_right:
     - 0.46
     - 0.86
@@ -66,6 +66,10 @@ surfaces:
   - demo
   ambient_profile: drift
   foreground_enabled: true
+  role: media
+  shape: rectangle
+  light:
+    color: '#ffffff'
 - id: plane-2
   name: Plane 02
   enabled: true
@@ -90,6 +94,10 @@ surfaces:
   - demo
   ambient_profile: drift
   foreground_enabled: true
+  role: media
+  shape: rectangle
+  light:
+    color: '#ffffff'
 - id: plane-3
   name: Plane 03
   enabled: true
@@ -114,6 +122,10 @@ surfaces:
   - demo
   ambient_profile: drift
   foreground_enabled: true
+  role: media
+  shape: rectangle
+  light:
+    color: '#ffffff'
 - id: plane-4
   name: Plane 04
   enabled: true
@@ -138,6 +150,10 @@ surfaces:
   - demo
   ambient_profile: drift
   foreground_enabled: true
+  role: media
+  shape: rectangle
+  light:
+    color: '#ffffff'
 - id: plane-5
   name: Plane 05
   enabled: true
@@ -162,6 +178,10 @@ surfaces:
   - demo
   ambient_profile: drift
   foreground_enabled: true
+  role: media
+  shape: rectangle
+  light:
+    color: '#ffffff'
 - id: plane-6
   name: Plane 06
   enabled: true
@@ -186,6 +206,10 @@ surfaces:
   - demo
   ambient_profile: drift
   foreground_enabled: true
+  role: media
+  shape: rectangle
+  light:
+    color: '#ffffff'
 - id: plane-7
   name: Plane 07
   enabled: true
@@ -210,6 +234,10 @@ surfaces:
   - demo
   ambient_profile: drift
   foreground_enabled: true
+  role: media
+  shape: rectangle
+  light:
+    color: '#ffffff'
 ambient_profiles:
 - id: drift
   name: Quiet particles
@@ -270,6 +298,12 @@ scenes:
   end_seconds: null
 show:
   mode: shuffle_bag
+  timeline:
+    duration_seconds: 60.0
+    loop: false
+    track_order: []
+    tracks: []
+    audio: null
   max_simultaneous: 1
   auto_start: true
   fade_in_seconds: 2.5
