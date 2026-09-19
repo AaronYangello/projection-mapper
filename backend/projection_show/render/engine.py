@@ -401,7 +401,8 @@ def run_renderer(
     frames = late = 0
     metrics = RenderMetrics()
     reported_geometry = -1
-    pending_window_attention = visible
+    window_attention_attempts = 8 if visible else 0
+    next_window_attention = start
     try:
         while not stop.is_set() and not glfw.window_should_close(window):
             began = time.monotonic()
@@ -423,13 +424,14 @@ def run_renderer(
                 if size[0] and size[1]:
                     engine.blit(ctx.screen, size)
                     glfw.swap_buffers(window)
-                    if pending_window_attention:
-                        # Reassert after Openbox receives the first presented fullscreen frame.
+                    if window_attention_attempts and began >= next_window_attention:
+                        # Openbox can register a new client after its first presented frame.
                         request_visible_window_attention(
                             window, visible=visible, fullscreen=fullscreen
                         )
                         request_x11_window_manager_attention(window)
-                        pending_window_attention = False
+                        window_attention_attempts -= 1
+                        next_window_attention = began + 0.25
                 presented = time.monotonic()
                 preview_readback_ms = 0.0
                 preview_captured = preview_skipped = False
