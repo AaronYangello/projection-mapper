@@ -22,8 +22,9 @@ Open the Vite URL (normally port 5173). Its proxy handles both API and WebSocket
 For API-only development: `.venv/bin/projection-show run --api-only`; the UI reports no output.
 There is no browser-only fallback misrepresented as native output.
 
-The native window defaults to 1280×720 and letterboxes the configured canvas. Use
-`--fullscreen` to use the configured monitor's current video mode; set that mode in the OS.
+The native window starts maximized and focused, using a 1280×720 initial window size and
+letterboxing the configured canvas. Use `--fullscreen` to use the configured monitor's current
+video mode; set that mode in the OS.
 Fullscreen hides the cursor. A canvas/display resolution mismatch appears as a warning and
 remains letterboxed rather than stretched. `--windowed` overrides the project's fullscreen flag.
 

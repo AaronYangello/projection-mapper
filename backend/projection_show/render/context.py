@@ -6,6 +6,15 @@ import glfw
 import moderngl
 
 
+def request_visible_window_attention(window, *, visible, fullscreen):
+    """Ask the desktop manager to present an operator-facing output window."""
+    if not visible:
+        return
+    if not fullscreen:
+        glfw.maximize_window(window)
+    glfw.focus_window(window)
+
+
 def graphics_report(ctx, size, backend):
     info = ctx.info
     renderer = info["GL_RENDERER"]
@@ -70,6 +79,9 @@ def create_context(
         glfw.window_hint(glfw.CLIENT_API, glfw.OPENGL_ES_API)
         glfw.window_hint(glfw.CONTEXT_CREATION_API, glfw.EGL_CONTEXT_API)
     glfw.window_hint(glfw.VISIBLE, visible)
+    if visible and not fullscreen:
+        glfw.window_hint(glfw.FOCUSED, True)
+        glfw.window_hint(glfw.MAXIMIZED, True)
     glfw.window_hint(glfw.COCOA_RETINA_FRAMEBUFFER, False)
     selected = None
     if fullscreen:
@@ -88,6 +100,7 @@ def create_context(
         )
     try:
         glfw.make_context_current(window)
+        request_visible_window_attention(window, visible=visible, fullscreen=fullscreen)
         glfw.swap_interval(1 if visible else 0)
         if fullscreen:
             glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_HIDDEN)
