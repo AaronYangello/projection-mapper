@@ -405,10 +405,6 @@ def run_renderer(
             if glfw.get_key(window, glfw.KEY_ESCAPE) == glfw.PRESS:
                 break
             glfw.poll_events()
-            if pending_window_attention:
-                # Openbox applies initial fullscreen state while processing these events.
-                request_visible_window_attention(window, visible=visible, fullscreen=fullscreen)
-                pending_window_attention = False
             frame = bridge.read()
             if frame:
                 engine.render(frame)
@@ -422,6 +418,12 @@ def run_renderer(
                 if size[0] and size[1]:
                     engine.blit(ctx.screen, size)
                     glfw.swap_buffers(window)
+                    if pending_window_attention:
+                        # Reassert after Openbox receives the first presented fullscreen frame.
+                        request_visible_window_attention(
+                            window, visible=visible, fullscreen=fullscreen
+                        )
+                        pending_window_attention = False
                 presented = time.monotonic()
                 preview_readback_ms = 0.0
                 preview_captured = preview_skipped = False
