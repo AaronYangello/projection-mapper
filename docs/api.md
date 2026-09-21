@@ -9,6 +9,10 @@ same-origin requests; no wildcard CORS bypass is added. Deployment writes requir
 be configured even if read-only status is open. Authentication headers/secrets must never be
 logged. The one-time download GET uses its own scoped cookie authorization.
 
+`GET /api/agent/manifest` provides a compact machine-readable discovery contract with common
+resources, controls, preconditions, and safety conventions. The bundled `projection-show agent`
+client consumes this API and emits JSON-only results; see the [agent interface](agent-interface.md).
+
 ## Authoring and runtime
 
 | Method / path | Body / behavior |

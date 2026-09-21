@@ -151,6 +151,30 @@ def test_renderer_staleness_is_not_reported_live(monkeypatch):
     assert bridge.telemetry()["status"] == "UNRESPONSIVE"
 
 
+def test_agent_manifest_is_discoverable_and_matches_openapi(store):
+    with TestClient(create_app(Runtime(store, RenderBridge()))) as client:
+        manifest = client.get("/api/agent/manifest").json()
+        paths = client.get("/openapi.json").json()["paths"]
+    assert manifest["interface_version"] == 1
+    assert manifest["capabilities"]["role"] == "authoring"
+    for resource in manifest["resources"].values():
+        if resource["path"] != "/openapi.json":
+            assert resource["path"] in paths
+    assert manifest["controls"]["project_apply"]["safety"] == (
+        "compare_and_swap_atomic_with_backup"
+    )
+
+
+def test_agent_snapshot_returns_consistent_operational_context(store):
+    runtime = Runtime(store, RenderBridge())
+    with TestClient(create_app(runtime)) as client:
+        snapshot = client.get("/api/agent/snapshot").json()
+    assert snapshot["status"]["revision"] == snapshot["project"]["revision"]
+    assert snapshot["project"]["project"]["id"] == runtime.project.id
+    assert snapshot["capabilities"]["role"] == "authoring"
+    assert snapshot["media"]["folder"].endswith("/media")
+
+
 def test_validate_without_mutation(store):
     runtime = Runtime(store, RenderBridge())
     before = store.path.read_text()

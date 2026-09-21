@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from . import __version__
+from .agent import agent_manifest
 from .authoring_api import routes
 from .build_api import routes as build_routes
 from .calibration import Preview
@@ -110,6 +111,25 @@ def create_app(
     @app.get("/api/status")
     async def status():
         return runtime.status()
+
+    @app.get("/api/agent/manifest")
+    async def automation_manifest():
+        return agent_manifest(services.capabilities())
+
+    @app.get("/api/agent/snapshot")
+    async def automation_snapshot():
+        return {
+            "status": runtime.status(),
+            "capabilities": services.capabilities(),
+            "project": {
+                "revision": runtime.revision,
+                "project": runtime.project.model_dump(mode="json"),
+            },
+            "media": {
+                "assets": runtime.media,
+                "folder": str((runtime.store.path.parent / "media").resolve()),
+            },
+        }
 
     @app.get("/api/project")
     async def project():

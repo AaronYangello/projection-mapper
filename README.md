@@ -5,6 +5,16 @@ A local projection-mapping engine with native GPU output and a responsive web co
 opacity, lighting, Mac atlas builds, streamed uploads, and atomic show bundles. The desktop
 workflow is tested; the Pi 4 graphics/HDMI/soak qualification remains an explicit hardware gate.
 
+## Interface
+
+| Playback | Show |
+| --- | --- |
+| [![Playback screen with the live mapped output, current cue, and automatic queue](docs/screenshots/playback.png)](docs/screenshots/playback.png) | [![Show screen with timeline authoring and surface lanes](docs/screenshots/show.png)](docs/screenshots/show.png) |
+| **Mapping** | **Media** |
+| [![Mapping screen with the four-corner surface alignment editor](docs/screenshots/mapping.png)](docs/screenshots/mapping.png) | [![Media screen with the searchable library and selected source settings](docs/screenshots/media.png)](docs/screenshots/media.png) |
+| **Project** | **Diagnostics** |
+| [![Project screen with output and automatic playback settings](docs/screenshots/project.png)](docs/screenshots/project.png) | [![Diagnostics screen with renderer performance and host resources](docs/screenshots/diagnostics.png)](docs/screenshots/diagnostics.png) |
+
 ## Run on a desktop
 
 Requires Python 3.11+, Node.js 20+, and a desktop OpenGL 3.3 driver. macOS and Linux are the
@@ -20,6 +30,20 @@ Open **[localhost:8000](http://127.0.0.1:8000)**. A separate native window shows
 The browser preview is a downscaled capture of that GPU output, refreshed twice per second.
 The configured 4K framebuffer is retained even when the desktop window is smaller.
 Close the output window, press Escape, or use Ctrl+C to exit the application.
+
+AI agents and automation should use the JSON-first control client instead of editing the live YAML
+or assembling ad hoc `curl` commands:
+
+```sh
+.venv/bin/projection-show agent describe
+.venv/bin/projection-show agent snapshot
+.venv/bin/projection-show agent command pause
+.venv/bin/projection-show agent wait --transport PAUSED --renderer LIVE
+```
+
+It supports discovery, snapshots, transport/test-pattern/manual-play controls, safe project
+validation and compare-and-swap updates, media scans, assertions, and guarded access to every other
+documented API operation. See [Agent and automation interface](docs/agent-interface.md).
 
 The generic [demo project](projects/demo/project.yaml) supplies seven planes, four viewports,
 five color scenes, an optional video scene, and a particle profile. Those counts, names, positions, source colors, and
@@ -114,6 +138,7 @@ build worker remain outside this phase. Adding/removing topology still uses YAML
 - [Timeline, opacity, audio and source preparation](docs/timeline.md)
 - [Mac build/export/deployment and bundle format](docs/build-deploy.md)
 - [API operations](docs/api.md)
+- [Agent and automation interface](docs/agent-interface.md)
 - [Pi 4 physical commissioning checklist](docs/pi-commissioning.md)
 - [Implementation decisions and risk register](docs/timeline-implementation.md)
 - [Mapping and calibration](docs/mapping.md)

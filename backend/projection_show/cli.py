@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import sys
 import threading
 import time
 from pathlib import Path
@@ -15,10 +16,16 @@ from .runtime import RenderBridge, Runtime
 
 
 def main():
+    # Keep the local launcher backwards compatible while giving automation a dedicated,
+    # independently discoverable remote-control grammar.
+    if len(sys.argv) > 1 and sys.argv[1] == "agent":
+        from .agent_cli import main as agent_main
+
+        raise SystemExit(agent_main(sys.argv[2:]))
     parser = argparse.ArgumentParser(prog="projection-show")
     parser.add_argument(
         "command",
-        choices=["run", "validate", "version", "build", "graphics-report"],
+        choices=["run", "validate", "version", "build", "graphics-report", "agent"],
         nargs="?",
         default="run",
     )
@@ -133,7 +140,10 @@ def main():
         uvicorn.Config(app, host=args.host, port=args.port, log_level="info", access_log=False)
     )
     if args.api_only:
-        server.run()
+        try:
+            server.run()
+        except KeyboardInterrupt:
+            pass
         return
     stop = threading.Event()
 
