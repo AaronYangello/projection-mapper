@@ -7,10 +7,12 @@ import type { Project } from "./types";
 export function ProjectEditor({
   project,
   canSave,
+  canStopToSave,
   save,
 }: {
   project: Project;
   canSave: boolean;
+  canStopToSave: boolean;
   save: (p: Project) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(project);
@@ -38,11 +40,12 @@ export function ProjectEditor({
     setRaw(JSON.stringify(next, null, 2));
     setMessage("");
   }
-  async function commit() {
+  async function commit(stopFirst = false) {
     setError("");
     setMessage("");
     setSaving(true);
     try {
+      if (stopFirst) await request("runtime/stop", { method: "POST" });
       await save(JSON.parse(raw));
       setMessage("Project saved and applied.");
     } catch (e) {
@@ -65,10 +68,16 @@ export function ProjectEditor({
           {dirty ? "Unsaved changes" : "Saved on disk"}
         </span>
       </div>
-      {!canSave && (
+      {!canSave && !canStopToSave && (
         <div className="notice">
-          Stop show and finish any active mapping session before saving. Your
+          Finish mapping or unload the active deployment before saving. Your
           draft stays here when you switch pages.
+        </div>
+      )}
+      {canStopToSave && (
+        <div className="notice">
+          Saving these output changes stops the show first. Start it again from
+          the playback controls when you are ready to test.
         </div>
       )}
       {conflict && (
@@ -277,12 +286,40 @@ export function ProjectEditor({
             <details>
               <summary>Projectors · {draft.projectors.length}</summary>
               <p className="hint">
-                Viewports are rectangles within the output canvas. Edit X/Y to
-                position them; overlapping viewports are allowed.
+                Disable a projector to hide all its surfaces without deleting
+                their mapping. Viewports remain saved when disabled.
               </p>
+              <button
+                type="button"
+                onClick={() =>
+                  update({
+                    ...draft,
+                    projectors: draft.projectors.map((p) => ({
+                      ...p,
+                      enabled: true,
+                    })),
+                  })
+                }
+              >
+                Enable all projectors
+              </button>
               {draft.projectors.map((p, index) => (
                 <fieldset className="topology-row" key={p.id}>
                   <legend>{p.name}</legend>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      update({
+                        ...draft,
+                        projectors: draft.projectors.map((v) => ({
+                          ...v,
+                          enabled: v.id === p.id,
+                        })),
+                      })
+                    }
+                  >
+                    Only {p.name}
+                  </button>
                   <div className="fields">
                     <label>
                       Projector name
@@ -348,9 +385,24 @@ export function ProjectEditor({
             <details>
               <summary>Surfaces · {draft.surfaces.length}</summary>
               <p className="hint">
-                A surface is a mapped shape on a projector. Disabling foreground
-                excludes it from the queue while keeping its background.
+                Disable a surface to hide its foreground and background while
+                keeping its mapping. Turning off foreground cues alone keeps its
+                background visible.
               </p>
+              <button
+                type="button"
+                onClick={() =>
+                  update({
+                    ...draft,
+                    surfaces: draft.surfaces.map((s) => ({
+                      ...s,
+                      enabled: true,
+                    })),
+                  })
+                }
+              >
+                Enable all surfaces
+              </button>
               {draft.surfaces.map((surface, index) => {
                 const change = (value: Partial<typeof surface>) =>
                   update({
@@ -362,6 +414,24 @@ export function ProjectEditor({
                 return (
                   <fieldset className="topology-row" key={surface.id}>
                     <legend>{surface.name}</legend>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        update({
+                          ...draft,
+                          surfaces: draft.surfaces.map((s) => ({
+                            ...s,
+                            enabled: s.id === surface.id,
+                          })),
+                          projectors: draft.projectors.map((p) => ({
+                            ...p,
+                            enabled: p.id === surface.projector_id,
+                          })),
+                        })
+                      }
+                    >
+                      Only {surface.name}
+                    </button>
                     <div className="fields">
                       <label>
                         Surface name
@@ -449,7 +519,7 @@ export function ProjectEditor({
                             change({ enabled: e.target.checked })
                           }
                         />
-                        Enabled
+                        Show this surface
                       </label>
                       <label className="check-label">
                         <input
@@ -518,11 +588,17 @@ export function ProjectEditor({
         </button>
         <button
           className="primary"
-          disabled={!dirty || !canSave || saving || conflict}
-          onClick={() => void commit()}
+          disabled={
+            !dirty || (!canSave && !canStopToSave) || saving || conflict
+          }
+          onClick={() => void commit(!canSave)}
         >
           <Save size={16} />
-          {saving ? "Saving…" : "Save & apply project"}
+          {saving
+            ? "Saving…"
+            : canSave
+              ? "Save & apply project"
+              : "Stop show & save project"}
         </button>
       </div>
     </div>

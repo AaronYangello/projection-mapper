@@ -53,7 +53,7 @@ export function UploadPanel({
 }: {
   enabled: boolean;
   bundle?: boolean;
-  onComplete?: () => void;
+  onComplete?: () => Promise<void> | void;
 }) {
   const [items, setItems] = useState<Item[]>([]);
   const active = useRef(new Map<string, XMLHttpRequest>());
@@ -63,10 +63,7 @@ export function UploadPanel({
     setItems((old) => old.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   async function add(files: FileList | null) {
     if (!files || !enabled) return;
-    if (files.length > 10) {
-      setNotice("Choose up to 10 files at a time.");
-      return;
-    }
+    let completed = false;
     for (const file of Array.from(files)) {
       const id = ident();
       setItems((old) => [
@@ -112,12 +109,10 @@ export function UploadPanel({
         } else
           update(id, {
             state:
-              result.state === "duplicate"
-                ? "Already in library"
-                : "Uploaded · scan to index",
+              result.state === "duplicate" ? "Already in library" : "Uploaded",
             progress: 1,
           });
-        onComplete?.();
+        completed = true;
       } catch (e) {
         update(id, {
           state: cancelled.current.has(id) ? "Cancelled" : "Failed",
@@ -125,6 +120,16 @@ export function UploadPanel({
         });
       } finally {
         active.current.delete(id);
+      }
+    }
+    if (completed && onComplete) {
+      try {
+        await onComplete();
+        setNotice("");
+      } catch (e) {
+        setNotice(
+          `Upload finished, but indexing failed: ${(e as Error).message}`,
+        );
       }
     }
   }
@@ -158,7 +163,7 @@ export function UploadPanel({
       <p className="subtle">
         {bundle
           ? "Upload validates only. Review the result before activating."
-          : "Stop playback to upload. Files are probed and installed without playing or adding them to the show. Then Scan folder and Add to show."}
+          : "Stop playback to upload. Files are indexed after the batch finishes. Add them to the show when ready."}
       </p>
       {notice && <p role="alert">{notice}</p>}
       {items.map((i) => (

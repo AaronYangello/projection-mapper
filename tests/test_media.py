@@ -211,3 +211,104 @@ def test_media_api_index_add_play_and_failed_decode_recovery(store, movie):
         client.post("/api/runtime/stop")
         client.post("/api/media/scan")
         assert not runtime.failed_media
+
+
+def test_shuffle_selection_bulk_add_folder_scan_and_delete(store, movie):
+    root, video = movie
+    runtime = Runtime(store, RenderBridge())
+    with TestClient(create_app(runtime)) as client:
+        client.post("/api/runtime/stop")
+        asset = next(e for e in runtime.media if e["path"] == "media/fixture.mp4")
+        bulk = client.post("/api/media/add-all", json={"revision": runtime.revision})
+        assert bulk.status_code == 200 and bulk.json()["added"] == 1
+        assert (
+            client.post("/api/media/add-all", json={"revision": runtime.revision}).json()["added"]
+            == 0
+        )
+
+        selection = client.put(
+            "/api/show/shuffle-media",
+            json={
+                "revision": runtime.revision,
+                "mode": "selected",
+                "paths": [asset["path"]],
+            },
+        )
+        assert selection.status_code == 200
+        assert runtime.scheduler.scenes.items == [asset["id"]]
+        assert (
+            client.put(
+                "/api/show/shuffle-media",
+                json={
+                    "revision": runtime.revision,
+                    "mode": "selected",
+                    "paths": ["media/missing.mp4"],
+                },
+            ).status_code
+            == 409
+        )
+
+        data = runtime.project.model_dump(mode="json")
+        data["show"]["timeline"] = {
+            "duration_seconds": 3,
+            "tracks": [
+                {
+                    "id": "track",
+                    "surface_id": "plane-1",
+                    "clips": [
+                        {
+                            "id": "clip",
+                            "scene_id": asset["id"],
+                            "start_seconds": 0,
+                            "duration_seconds": 1,
+                        }
+                    ],
+                }
+            ],
+        }
+        runtime.apply(Project.model_validate(data))
+        assert (
+            client.request(
+                "DELETE",
+                f"/api/media/{asset['id']}",
+                json={
+                    "revision": runtime.revision - 1,
+                },
+            ).status_code
+            == 409
+        )
+        deleted = client.request(
+            "DELETE",
+            f"/api/media/{asset['id']}",
+            json={
+                "revision": runtime.revision,
+            },
+        )
+        assert deleted.status_code == 200
+        assert not video.exists()
+        assert not any(s.path == asset["path"] for s in runtime.project.scenes if s.type != "color")
+        assert runtime.project.show.shuffle_media_paths == []
+        assert runtime.project.show.timeline.tracks[0].clips == []
+        assert not any(e["id"] == asset["id"] for e in runtime.media)
+
+        image = root / "media" / "still.png"
+        Image.new("RGB", (32, 32), "red").save(image)
+        selected = client.put(
+            "/api/show/shuffle-media",
+            json={
+                "revision": runtime.revision,
+                "mode": "all_folder",
+                "paths": [],
+            },
+        )
+        assert selected.status_code == 200
+        scanned = client.post("/api/media/scan")
+        assert scanned.status_code == 200
+        assert any(s.path == "media/still.png" for s in runtime.project.scenes if s.type != "color")
+        assert runtime.scheduler.scenes.items == [
+            next(
+                s.id
+                for s in runtime.project.scenes
+                if s.type != "color" and s.path == "media/still.png"
+            )
+        ]

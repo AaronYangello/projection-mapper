@@ -129,6 +129,11 @@ def validate_profile(project: Project, profile=PI4):
         raise ValueError("Build requires the saved Timeline mode; stop and choose Use this mode")
     validate_destination(project, profile)
     surfaces = {s.id: s for s in project.surfaces}
+    enabled_projectors = {p.id for p in project.projectors if p.enabled}
+    for track in project.show.timeline.tracks:
+        surface = surfaces[track.surface_id]
+        if not surface.enabled or surface.projector_id not in enabled_projectors:
+            raise ValueError(f"Track {track.id}: enable its surface and projector before building")
     lights = [t for t in project.show.timeline.tracks if surfaces[t.surface_id].role == "lighting"]
     if len(lights) > profile.lighting_surfaces:
         raise ValueError(

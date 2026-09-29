@@ -30,6 +30,10 @@ with tempfile.TemporaryDirectory(prefix="projection-ux-") as directory:
             output.mux(packet)
     (media / "broken.mp4").write_bytes(b"Intentional invalid media fixture")
     data = ProjectStore(repo / "projects/demo/project.yaml").load().model_dump()
+    for projector in data["projectors"]:
+        projector["enabled"] = True
+    for surface in data["surfaces"]:
+        surface["enabled"] = True
     data["scenes"] = [s for s in data["scenes"] if s["type"] == "color"] + [
         {"id": "sample", "name": "Sample image", "type": "image", "path": "media/sample.png"},
         {"id": "clip", "name": "Sample video", "type": "video", "path": "media/clip.mp4"},

@@ -100,6 +100,36 @@ def test_save_validates_conflicts_and_survives_restart(store):
     assert Runtime(store, RenderBridge()).project.name == "Reusable project"
 
 
+def test_one_projector_save_preserves_other_surfaces_and_timeline(store):
+    runtime = Runtime(store, RenderBridge())
+    with TestClient(create_app(runtime)) as client:
+        client.post("/api/runtime/stop")
+        data = client.get("/api/project").json()
+        project = data["project"]
+        active = project["projectors"][0]["id"]
+        hidden = next(s for s in project["surfaces"] if s["projector_id"] != active)
+        project["show"]["timeline"]["tracks"] = [
+            {
+                "id": "saved-track",
+                "surface_id": hidden["id"],
+                "clips": [],
+            }
+        ]
+        for projector in project["projectors"]:
+            projector["enabled"] = projector["id"] == active
+        response = client.put("/api/project", json=data)
+        assert response.status_code == 200
+        assert len(runtime.scheduler.surfaces.items) == sum(
+            s.enabled and s.foreground_enabled and s.projector_id == active
+            for s in runtime.project.surfaces
+        )
+        assert runtime.project.show.timeline.tracks[0].surface_id == hidden["id"]
+        assert len(runtime.project.surfaces) == len(project["surfaces"])
+    reloaded = Runtime(store, RenderBridge()).project
+    assert reloaded.show.timeline.tracks[0].surface_id == hidden["id"]
+    assert [p.enabled for p in reloaded.projectors] == [True, False, False, False]
+
+
 def test_failed_save_retains_runtime_configuration(store, monkeypatch):
     runtime = Runtime(store, RenderBridge())
     runtime.command("stop")

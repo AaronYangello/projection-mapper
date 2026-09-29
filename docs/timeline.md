@@ -111,7 +111,9 @@ without changing clip timing. Fixed colors are the only current color channel.
 
 Timings are finite, non-negative, and bounded to 24 hours; positive clip/audio durations
 must fit the show. Clip IDs are unique across the show; track IDs and destinations are
-unique. References must resolve to enabled compatible surfaces/scenes/projectors. Trims
+unique. References must resolve to compatible surfaces and enabled scenes. A disabled
+surface or projector keeps its tracks saved but does not render or decode them; re-enable
+both before compiling a bundle. Trims
 apply to video/audio, not images/colors. Saves check indexed source ranges; builds re-probe
 and hash actual sources. Timeline mode ignores a scene's shuffle trim/end-behavior settings.
 

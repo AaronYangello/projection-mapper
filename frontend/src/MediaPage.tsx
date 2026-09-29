@@ -10,6 +10,7 @@ import {
   Copy,
   Music2,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { UploadPanel } from "./UploadPanel";
 import { getToken, request } from "./api";
@@ -143,6 +144,24 @@ export function MediaPage({
         .includes(query.toLowerCase())
     );
   });
+  const addable = assets.filter(
+    (a) => !a.error && !project.scenes.some((s) => s.path === a.path),
+  );
+  async function scanFolder() {
+    const data = await request<{ assets: MediaAsset[]; folder?: string }>(
+      "media/scan",
+      { method: "POST" },
+    );
+    setAssets(data.assets);
+    if (data.folder) setFolder(data.folder);
+    setScanRevision((v) => v + 1);
+    if (!data.assets.some((a) => a.id === selected))
+      setSelected(data.assets[0]?.id ?? "");
+    await reload();
+    setMessage(
+      `Scan complete. ${data.assets.length} files, ${data.assets.filter((a) => a.error).length} need attention.`,
+    );
+  }
   function select(id: string) {
     if (id === selected) return;
     if (dirty) {
@@ -173,7 +192,7 @@ export function MediaPage({
   }
   return (
     <section className="media-page">
-      <UploadPanel enabled={canEdit && !dirty} />
+      <UploadPanel enabled={canEdit && !dirty} onComplete={scanFolder} />
       <div className="section-heading">
         <div>
           <h2>
@@ -181,28 +200,35 @@ export function MediaPage({
           </h2>
           <p>Choosing a file here does not change the projected output.</p>
         </div>
-        <button
-          disabled={!canEdit || busy || dirty}
-          onClick={() =>
-            void action(async () => {
-              const data = await request<{
-                assets: MediaAsset[];
-                folder?: string;
-              }>("media/scan", { method: "POST" });
-              setAssets(data.assets);
-              if (data.folder) setFolder(data.folder);
-              setScanRevision((v) => v + 1);
-              if (!data.assets.some((a) => a.id === selected))
-                setSelected(data.assets[0]?.id ?? "");
-              setMessage(
-                `Scan complete. ${data.assets.length} files, ${data.assets.filter((a) => a.error).length} need attention.`,
-              );
-            })
-          }
-        >
-          <RefreshCw size={16} />
-          {busy ? "Working…" : "Scan folder"}
-        </button>
+        <div className="button-row">
+          <button
+            disabled={!canEdit || busy || dirty || !addable.length}
+            onClick={() =>
+              void action(async () => {
+                const result = await request<{ added: number }>(
+                  "media/add-all",
+                  {
+                    method: "POST",
+                    body: JSON.stringify({ revision: status.revision }),
+                  },
+                );
+                await reload();
+                setMessage(
+                  `${result.added} ${result.added === 1 ? "file" : "files"} added to the show.`,
+                );
+              })
+            }
+          >
+            <Plus size={16} /> Add all playable files to show ({addable.length})
+          </button>
+          <button
+            disabled={!canEdit || busy || dirty}
+            onClick={() => void action(scanFolder)}
+          >
+            <RefreshCw size={16} />
+            {busy ? "Working…" : "Scan folder"}
+          </button>
+        </div>
       </div>
       <details className="folder-help">
         <summary>Add files to this library</summary>
@@ -378,13 +404,60 @@ export function MediaPage({
                 </div>
               )}
             </div>
-            {asset && !asset.error && (
+            {asset && (
               <section
                 className="panel form-panel media-details"
                 aria-label="Selected media"
               >
                 <h2>{scene?.name ?? asset.name}</h2>
                 <p className="source-path">{asset.path}</p>
+                {asset.error && <p className="notice error">{asset.error}</p>}
+                <button
+                  className="danger-button"
+                  disabled={!canEdit || busy || dirty}
+                  onClick={() => {
+                    const references =
+                      project.show.timeline.tracks.reduce(
+                        (count, track) =>
+                          count +
+                          track.clips.filter(
+                            (clip) => clip.scene_id === scene?.id,
+                          ).length,
+                        0,
+                      ) +
+                      (project.show.timeline.audio?.scene_id === scene?.id
+                        ? 1
+                        : 0);
+                    const detail = scene
+                      ? ` This also removes its scene${references ? ` and ${references} timeline reference${references === 1 ? "" : "s"}` : ""}.`
+                      : "";
+                    if (
+                      !window.confirm(
+                        `Permanently delete ${asset.name} from this project's media folder?${detail}`,
+                      )
+                    )
+                      return;
+                    void action(async () => {
+                      const result = await request<{ assets: MediaAsset[] }>(
+                        `media/${asset.id}`,
+                        {
+                          method: "DELETE",
+                          body: JSON.stringify({ revision: status.revision }),
+                        },
+                      );
+                      setAssets(result.assets);
+                      setSelected(result.assets[0]?.id ?? "");
+                      setDraft(null);
+                      setBase(null);
+                      await reload();
+                      setMessage(
+                        `${asset.name} deleted from the media folder.`,
+                      );
+                    });
+                  }}
+                >
+                  <Trash2 size={16} /> Delete file
+                </button>
                 {!asset.error && (
                   <div className="media-metadata">
                     <span>
@@ -401,343 +474,353 @@ export function MediaPage({
                     <span>{((asset.bytes ?? 0) / 1048576).toFixed(1)} MB</span>
                   </div>
                 )}
-                {!scene ? (
-                  <>
-                    <p>Add this file as a reusable scene before playing it.</p>
-                    <button
-                      className="primary"
-                      disabled={busy || !canEdit}
-                      onClick={() =>
-                        void action(async () => {
-                          await request(`media/${asset.id}/add`, {
-                            method: "POST",
-                          });
-                          await reload();
-                          setMessage(
-                            asset.type === "audio" || status.mode === "timeline"
-                              ? "Source added. Assign it in Show → Timeline."
-                              : "Added to the show. Choose a surface to play it.",
-                          );
-                        })
-                      }
-                    >
-                      <Plus size={16} />
-                      Add to show
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {scene.type === "audio" || status.mode === "timeline" ? (
-                      <p className="hint">
-                        Assign this source in Show → Timeline. Audio belongs in
-                        the Master audio lane; media belongs on a surface track.
+                {!asset.error &&
+                  (!scene ? (
+                    <>
+                      <p>
+                        Add this file as a reusable scene before playing it.
                       </p>
-                    ) : (
-                      <>
-                        <div className="media-play">
-                          <label>
-                            Target surface
-                            <select
-                              value={surfaceId}
-                              onChange={(e) => setSurfaceId(e.target.value)}
-                            >
-                              {eligible.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <button
-                            className="primary"
-                            disabled={
-                              busy ||
-                              !connected ||
-                              !surfaceId ||
-                              status.mode === "timeline" ||
-                              !scene.enabled ||
-                              dirty
-                            }
-                            onClick={() =>
-                              void action(async () => {
-                                await request("manual/play", {
-                                  method: "POST",
-                                  body: JSON.stringify({
-                                    surface_id: surfaceId,
-                                    scene_id: scene.id,
-                                  }),
-                                });
-                                setMessage(
-                                  `Playing ${scene.name} on ${eligible.find((s) => s.id === surfaceId)?.name}.`,
-                                );
-                              })
-                            }
-                          >
-                            <Play size={16} />
-                            Play on surface
-                          </button>
-                        </div>
-                        <p className="hint">
-                          Replaces the current cue, then returns to the
-                          automatic queue.{" "}
-                          {dirty
-                            ? "Save or discard edits before playing."
-                            : status.blackout
-                              ? "Blackout is active; restore output to see it."
-                              : "Uses the saved settings below."}
-                        </p>
-                      </>
-                    )}
-                    {!eligible.length && (
-                      <p className="notice">
-                        Enable a foreground surface in Project before playing
-                        media.
-                      </p>
-                    )}
-                    {draft && (
-                      <form
-                        className="media-settings"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          if (!canEdit || conflict) return;
+                      <button
+                        className="primary"
+                        disabled={busy || !canEdit}
+                        onClick={() =>
                           void action(async () => {
-                            const normalized = {
-                              ...draft,
-                              tags: draft.tags
-                                .map((tag) => tag.trim())
-                                .filter(Boolean),
-                            };
-                            await save({
-                              ...project,
-                              scenes: project.scenes.map((s) =>
-                                s.id === draft.id ? normalized : s,
-                              ),
+                            await request(`media/${asset.id}/add`, {
+                              method: "POST",
                             });
-                            setDraft(normalized);
-                            setBase(normalized);
-                            setMessage("Playback settings saved.");
-                          });
-                        }}
+                            await reload();
+                            setMessage(
+                              asset.type === "audio" ||
+                                status.mode === "timeline"
+                                ? "Source added. Assign it in Show → Timeline."
+                                : "Added to the show. Choose a surface to play it.",
+                            );
+                          })
+                        }
                       >
-                        <div className="section-heading">
-                          <h3>Scene settings</h3>
-                          <span className="badge">
-                            {dirty ? "Unsaved edits" : "Saved"}
-                          </span>
-                        </div>
-                        {conflict && (
-                          <p role="alert" className="notice error">
-                            This project changed while you were editing. Discard
-                            edits to load the current settings.
-                          </p>
-                        )}
-                        <fieldset
-                          disabled={!canEdit || busy}
-                          className="settings-fields"
-                        >
-                          <label>
-                            Display name
-                            <input
-                              value={draft.name}
-                              required
-                              onChange={(e) => update({ name: e.target.value })}
-                            />
-                          </label>
-                          <label className="check-label">
-                            <input
-                              type="checkbox"
-                              checked={draft.enabled}
-                              onChange={(e) =>
-                                update({ enabled: e.target.checked })
-                              }
-                            />
-                            Enabled in show
-                          </label>
-                          {draft.type !== "audio" && (
+                        <Plus size={16} />
+                        Add to show
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {scene.type === "audio" || status.mode === "timeline" ? (
+                        <p className="hint">
+                          Assign this source in Show → Timeline. Audio belongs
+                          in the Master audio lane; media belongs on a surface
+                          track.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="media-play">
                             <label>
-                              Fit to surface
+                              Target surface
                               <select
-                                value={draft.fit}
-                                onChange={(e) =>
-                                  update({ fit: e.target.value })
-                                }
+                                value={surfaceId}
+                                onChange={(e) => setSurfaceId(e.target.value)}
                               >
-                                <option value="cover">Fill · crop edges</option>
-                                <option value="contain">
-                                  Fit · show entire image
-                                </option>
-                                <option value="stretch">
-                                  Stretch · may distort
-                                </option>
-                                <option value="native">
-                                  Native · original pixel size
-                                </option>
+                                {eligible.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}
+                                  </option>
+                                ))}
                               </select>
                             </label>
+                            <button
+                              className="primary"
+                              disabled={
+                                busy ||
+                                !connected ||
+                                !surfaceId ||
+                                status.mode === "timeline" ||
+                                !scene.enabled ||
+                                dirty
+                              }
+                              onClick={() =>
+                                void action(async () => {
+                                  await request("manual/play", {
+                                    method: "POST",
+                                    body: JSON.stringify({
+                                      surface_id: surfaceId,
+                                      scene_id: scene.id,
+                                    }),
+                                  });
+                                  setMessage(
+                                    `Playing ${scene.name} on ${eligible.find((s) => s.id === surfaceId)?.name}.`,
+                                  );
+                                })
+                              }
+                            >
+                              <Play size={16} />
+                              Play on surface
+                            </button>
+                          </div>
+                          <p className="hint">
+                            Replaces the current cue, then returns to the
+                            automatic queue.{" "}
+                            {dirty
+                              ? "Save or discard edits before playing."
+                              : status.blackout
+                                ? "Blackout is active; restore output to see it."
+                                : "Uses the saved settings below."}
+                          </p>
+                        </>
+                      )}
+                      {!eligible.length && (
+                        <p className="notice">
+                          Enable a foreground surface in Project before playing
+                          media.
+                        </p>
+                      )}
+                      {draft && (
+                        <form
+                          className="media-settings"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!canEdit || conflict) return;
+                            void action(async () => {
+                              const normalized = {
+                                ...draft,
+                                tags: draft.tags
+                                  .map((tag) => tag.trim())
+                                  .filter(Boolean),
+                              };
+                              await save({
+                                ...project,
+                                scenes: project.scenes.map((s) =>
+                                  s.id === draft.id ? normalized : s,
+                                ),
+                              });
+                              setDraft(normalized);
+                              setBase(normalized);
+                              setMessage("Playback settings saved.");
+                            });
+                          }}
+                        >
+                          <div className="section-heading">
+                            <h3>Scene settings</h3>
+                            <span className="badge">
+                              {dirty ? "Unsaved edits" : "Saved"}
+                            </span>
+                          </div>
+                          {conflict && (
+                            <p role="alert" className="notice error">
+                              This project changed while you were editing.
+                              Discard edits to load the current settings.
+                            </p>
                           )}
-                          {draft.type === "video" && (
-                            <>
-                              <label>
-                                Playback length
-                                <select
-                                  value={draft.playback}
-                                  onChange={(e) =>
-                                    update({ playback: e.target.value })
-                                  }
-                                >
-                                  <option value="full_clip">
-                                    Full clip, including fades
-                                  </option>
-                                  <option value="timed">
-                                    Use project hold time
-                                  </option>
-                                </select>
-                              </label>
-                              {draft.playback === "timed" && (
-                                <label>
-                                  When the clip ends
-                                  <select
-                                    value={draft.end_behavior}
-                                    onChange={(e) =>
-                                      update({ end_behavior: e.target.value })
-                                    }
-                                  >
-                                    <option value="hold">
-                                      Hold the last frame
-                                    </option>
-                                    <option value="loop">
-                                      Loop until the cue ends
-                                    </option>
-                                  </select>
-                                </label>
-                              )}
-                              <div className="trim-fields">
-                                <label>
-                                  Start at (seconds)
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="any"
-                                    max={asset.duration_seconds}
-                                    value={draft.start_seconds ?? 0}
-                                    onChange={(e) =>
-                                      update({
-                                        start_seconds: Number(e.target.value),
-                                      })
-                                    }
-                                  />
-                                </label>
-                                <label>
-                                  End at (seconds)
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="any"
-                                    max={asset.duration_seconds}
-                                    value={draft.end_seconds ?? ""}
-                                    placeholder={asset.duration_seconds?.toFixed(
-                                      2,
-                                    )}
-                                    onChange={(e) =>
-                                      update({
-                                        end_seconds:
-                                          e.target.value === ""
-                                            ? null
-                                            : Number(e.target.value),
-                                      })
-                                    }
-                                  />
-                                </label>
-                              </div>
-                              <p className="hint">
-                                Leave End empty to use the full file. Fades are
-                                included in full-clip duration.
-                              </p>
-                            </>
-                          )}
-                          <details>
-                            <summary>
-                              {draft.type === "audio"
-                                ? "Tags"
-                                : "Crop position & tags"}
-                            </summary>
-                            {draft.type !== "audio" && (
-                              <>
-                                <p className="hint">
-                                  Crop center: 0 is left/top, 1 is right/bottom.
-                                  Centered is 0.5. Applies to cropped content;
-                                  letterboxing stays centered.
-                                </p>
-                                <div className="trim-fields">
-                                  {(["X", "Y"] as const).map((axis, i) => (
-                                    <label key={axis}>
-                                      Crop center {axis}
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="1"
-                                        step="any"
-                                        disabled={
-                                          draft.fit === "stretch" ||
-                                          draft.fit === "contain"
-                                        }
-                                        value={draft.focal_point?.[i] ?? 0.5}
-                                        onChange={(e) => {
-                                          const point: [number, number] = [
-                                            ...(draft.focal_point ?? [
-                                              0.5, 0.5,
-                                            ]),
-                                          ];
-                                          point[i] = Number(e.target.value);
-                                          update({ focal_point: point });
-                                        }}
-                                      />
-                                    </label>
-                                  ))}
-                                </div>
-                              </>
-                            )}
+                          <fieldset
+                            disabled={!canEdit || busy}
+                            className="settings-fields"
+                          >
                             <label>
-                              Tags (comma separated)
+                              Display name
                               <input
-                                value={draft.tags.join(", ")}
+                                value={draft.name}
+                                required
                                 onChange={(e) =>
-                                  update({
-                                    tags: e.target.value
-                                      .split(",")
-                                      .map((t) => t.trim()),
-                                  })
+                                  update({ name: e.target.value })
                                 }
                               />
                             </label>
-                          </details>
-                        </fieldset>
-                        <div className="editor-actions">
-                          <button
-                            type="button"
-                            disabled={!dirty || busy}
-                            onClick={() => {
-                              setDraft(scene);
-                              setBase(scene);
-                              setMessage("");
-                              setError("");
-                            }}
-                          >
-                            Discard edits
-                          </button>
-                          <button
-                            type="submit"
-                            className="primary"
-                            disabled={!canEdit || busy || !dirty || conflict}
-                          >
-                            <Save size={16} />
-                            {busy ? "Saving…" : "Save settings"}
-                          </button>
-                        </div>
-                      </form>
-                    )}
-                  </>
-                )}
+                            <label className="check-label">
+                              <input
+                                type="checkbox"
+                                checked={draft.enabled}
+                                onChange={(e) =>
+                                  update({ enabled: e.target.checked })
+                                }
+                              />
+                              Enabled in show
+                            </label>
+                            {draft.type !== "audio" && (
+                              <label>
+                                Fit to surface
+                                <select
+                                  value={draft.fit}
+                                  onChange={(e) =>
+                                    update({ fit: e.target.value })
+                                  }
+                                >
+                                  <option value="cover">
+                                    Fill · crop edges
+                                  </option>
+                                  <option value="contain">
+                                    Fit · show entire image
+                                  </option>
+                                  <option value="stretch">
+                                    Stretch · may distort
+                                  </option>
+                                  <option value="native">
+                                    Native · original pixel size
+                                  </option>
+                                </select>
+                              </label>
+                            )}
+                            {draft.type === "video" && (
+                              <>
+                                <label>
+                                  Playback length
+                                  <select
+                                    value={draft.playback}
+                                    onChange={(e) =>
+                                      update({ playback: e.target.value })
+                                    }
+                                  >
+                                    <option value="full_clip">
+                                      Full clip, including fades
+                                    </option>
+                                    <option value="timed">
+                                      Use project hold time
+                                    </option>
+                                  </select>
+                                </label>
+                                {draft.playback === "timed" && (
+                                  <label>
+                                    When the clip ends
+                                    <select
+                                      value={draft.end_behavior}
+                                      onChange={(e) =>
+                                        update({ end_behavior: e.target.value })
+                                      }
+                                    >
+                                      <option value="hold">
+                                        Hold the last frame
+                                      </option>
+                                      <option value="loop">
+                                        Loop until the cue ends
+                                      </option>
+                                    </select>
+                                  </label>
+                                )}
+                                <div className="trim-fields">
+                                  <label>
+                                    Start at (seconds)
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      max={asset.duration_seconds}
+                                      value={draft.start_seconds ?? 0}
+                                      onChange={(e) =>
+                                        update({
+                                          start_seconds: Number(e.target.value),
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    End at (seconds)
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      max={asset.duration_seconds}
+                                      value={draft.end_seconds ?? ""}
+                                      placeholder={asset.duration_seconds?.toFixed(
+                                        2,
+                                      )}
+                                      onChange={(e) =>
+                                        update({
+                                          end_seconds:
+                                            e.target.value === ""
+                                              ? null
+                                              : Number(e.target.value),
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                </div>
+                                <p className="hint">
+                                  Leave End empty to use the full file. Fades
+                                  are included in full-clip duration.
+                                </p>
+                              </>
+                            )}
+                            <details>
+                              <summary>
+                                {draft.type === "audio"
+                                  ? "Tags"
+                                  : "Crop position & tags"}
+                              </summary>
+                              {draft.type !== "audio" && (
+                                <>
+                                  <p className="hint">
+                                    Crop center: 0 is left/top, 1 is
+                                    right/bottom. Centered is 0.5. Applies to
+                                    cropped content; letterboxing stays
+                                    centered.
+                                  </p>
+                                  <div className="trim-fields">
+                                    {(["X", "Y"] as const).map((axis, i) => (
+                                      <label key={axis}>
+                                        Crop center {axis}
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="1"
+                                          step="any"
+                                          disabled={
+                                            draft.fit === "stretch" ||
+                                            draft.fit === "contain"
+                                          }
+                                          value={draft.focal_point?.[i] ?? 0.5}
+                                          onChange={(e) => {
+                                            const point: [number, number] = [
+                                              ...(draft.focal_point ?? [
+                                                0.5, 0.5,
+                                              ]),
+                                            ];
+                                            point[i] = Number(e.target.value);
+                                            update({ focal_point: point });
+                                          }}
+                                        />
+                                      </label>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                              <label>
+                                Tags (comma separated)
+                                <input
+                                  value={draft.tags.join(", ")}
+                                  onChange={(e) =>
+                                    update({
+                                      tags: e.target.value
+                                        .split(",")
+                                        .map((t) => t.trim()),
+                                    })
+                                  }
+                                />
+                              </label>
+                            </details>
+                          </fieldset>
+                          <div className="editor-actions">
+                            <button
+                              type="button"
+                              disabled={!dirty || busy}
+                              onClick={() => {
+                                setDraft(scene);
+                                setBase(scene);
+                                setMessage("");
+                                setError("");
+                              }}
+                            >
+                              Discard edits
+                            </button>
+                            <button
+                              type="submit"
+                              className="primary"
+                              disabled={!canEdit || busy || !dirty || conflict}
+                            >
+                              <Save size={16} />
+                              {busy ? "Saving…" : "Save settings"}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </>
+                  ))}
               </section>
             )}
           </div>

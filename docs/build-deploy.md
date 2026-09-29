@@ -155,4 +155,4 @@ Raw media upload uses an initialized job plus a streamed octet body. Names are s
 the server chooses `upload-<hash-prefix>-<name>.<ext>`, checks actual decoded media and exact
 duplicates, and rejects different content with the same display filename. Final rename/index
 installation requires stopped, unchanged project state. Uploads never add scenes or start
-playback; scan/add/save remain explicit. There is no resumable upload or remote file deletion.
+playback; the browser scans after each completed upload batch and show membership remains explicit. There is no resumable upload.

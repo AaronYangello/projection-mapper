@@ -10,7 +10,13 @@ from projection_show.config.store import ProjectStore
 
 @pytest.fixture
 def demo():
-    return ProjectStore(Path(__file__).parents[1] / "projects/demo/project.yaml").load()
+    project = ProjectStore(Path(__file__).parents[1] / "projects/demo/project.yaml").load()
+    # Tests exercise the full demo topology even when the live demo has outputs hidden.
+    for projector in project.projectors:
+        projector.enabled = True
+    for surface in project.surfaces:
+        surface.enabled = True
+    return project
 
 
 @pytest.fixture

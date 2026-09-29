@@ -725,7 +725,14 @@ export default function App() {
                   canSave={
                     status.transport === "READY" &&
                     connected &&
-                    !status.calibration
+                    !status.calibration &&
+                    !status.deployment
+                  }
+                  canStopToSave={
+                    status.transport !== "READY" &&
+                    connected &&
+                    !status.calibration &&
+                    !status.deployment
                   }
                   save={engine.save}
                 />

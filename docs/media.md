@@ -26,15 +26,16 @@ requires a download or an internet connection.
    `.m4v`, `.mov`, `.mkv`, `.webm`, `.avi`; images are `.png`, `.jpg`, `.jpeg`, `.webp`.
    Audio sources include `.wav`, `.mp3`, `.aac`, `.m4a`, `.flac`, and `.ogg`.
    Actual codec support depends on the installed FFmpeg build.
-2. Stop the show, open Media, and choose **Scan folder**. Cards show inspected dimensions,
+2. Stop the show, open Media, and choose **Scan folder** after copying files manually. Upload batches scan automatically when they finish. Cards show inspected dimensions,
    frame rate, duration, codec, thumbnail, and an emphasized Needs attention state. Full file
    errors stay visible in a separate **Media needs attention** panel above the library, even
    when filtering or selecting a different file. Scanning is explicit.
-3. **Add to show** persists a reusable scene definition. Choose an enabled foreground surface
+3. **Add to show** persists one reusable scene definition; **Add all playable files to show** adds every indexed file that is not already in the show in one save. Choose an enabled foreground surface
    and **Play on surface** to interrupt the current cue; automatic queued playback resumes afterward.
 4. While stopped, edit the display name, enabled state, tags, and that scene's fit, focal point, clip range, and playback settings, then
    save. Search matches names, paths, and tags; type filters also include Needs attention.
    Drafts stay in place when changing pages. These are project settings, not per-browser player settings.
+5. In Show → Shuffle, choose the current saved show sources, all playable video and image files in the folder, or an explicit file list. Folder-wide selection adds new playable files after a scan; the explicit selection stays fixed. Save while stopped. In Media, **Delete file** removes the physical file and any saved scene, shuffle selection, or timeline reference to it after confirmation.
 
 Fit modes are **cover** (crop), **contain** (black bars), **stretch**, and **native** (one source
 pixel per logical surface pixel). Focal points in [0,1] choose the crop center; letterboxing
@@ -65,7 +66,7 @@ install atomically only while stopped. Exact duplicates are reused/reported; nam
 never overwrite files. Upload never adds a scene or starts playback. See [limits, cancellation
 and installation semantics](build-deploy.md#storage-limits).
 
-Uploads receive server-chosen filenames such as `media/upload-<hash>-sintel-trailer.mp4`.
+Uploads receive server-chosen filenames such as `media/upload-<hash>-sintel-trailer.mp4`. The picker has no batch-size cap; uploads run sequentially. The project still has a 500-file scan/storage limit, with per-file size and free-space checks.
 Uploading a replacement does not silently repair an older scene's missing path. Scan and add
 the new source explicitly, then update the saved show as needed. Browser upload and timeline
 IDs work on deliberate private-network HTTP connections as well as localhost/HTTPS.

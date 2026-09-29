@@ -50,6 +50,8 @@ export type Project = {
   })[];
   show: {
     mode: string;
+    shuffle_media_mode: "configured" | "all_folder" | "selected";
+    shuffle_media_paths: string[];
     timeline: Timeline;
     max_simultaneous: number;
     auto_start: boolean;

@@ -21,6 +21,7 @@ client consumes this API and emits JSON-only results; see the [agent interface](
 | GET `/api/show/timeline` | Saved timeline and revision |
 | PUT `/api/show/timeline` | `{revision, timeline}`; stopped authoring save, full reference/range validation |
 | POST `/api/show/mode` | `{revision, mode: "shuffle_bag" or "timeline"}`; explicit stopped activation |
+| PUT `/api/show/shuffle-media` | `{revision, mode: "configured" or "all_folder" or "selected", paths: [...]}`; save shuffle membership while stopped |
 | POST `/api/runtime/seek` | `{seconds}`; finite absolute timeline position |
 | GET/PUT `/api/runtime/audio` | `audio_sink` auto/alsa/fake, `audio_device`, nullable volume/muted/sync_offset_ms; machine-local, routing stopped-only |
 | POST `/api/runtime/{command}` | Existing start/pause/resume/stop/blackout/restore/skip/fade controls |
@@ -35,7 +36,8 @@ uses 422. An authoring role is required to save timeline/mode or invoke the comp
 2. POST `/api/media/upload?upload_id=<id>` with raw bytes; the server streams to disk.
 3. GET `/api/media/uploads/{id}` reports received bytes/state/error/result.
 4. DELETE `/api/media/uploads/{id}` cancels; also abort the browser request.
-5. Explicitly scan/add/save after success. Upload never creates a scene or starts playback.
+5. The browser scans automatically after a completed upload batch. Manual folder copies still need a scan. Upload never starts playback.
+6. POST `/api/media/add-all` with `{revision}` adds every indexed playable file not already in the show. DELETE `/api/media/{asset_id}` with `{revision}` removes a file and its saved references while stopped.
 
 The actual content is probed and hashed; declared extension/MIME is insufficient. Limits,
 safe final names, duplicate detection, atomic install and cleanup are in [storage](build-deploy.md#storage-limits).

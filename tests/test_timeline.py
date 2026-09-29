@@ -5,7 +5,7 @@ from projection_show.config.models import Project
 from projection_show.config.store import migrate
 from projection_show.config.timeline import Opacity
 from projection_show.runtime import RenderBridge, Runtime
-from projection_show.timeline import TimelineController, evaluate, opacity_at
+from projection_show.timeline import TimelineController, evaluate, opacity_at, source_bounds
 from pydantic import ValidationError
 
 
@@ -54,6 +54,8 @@ def test_v1_migrates_without_mutation_or_loss(demo):
     old = demo.model_dump(mode="json")
     old["schema_version"] = 1
     del old["show"]["timeline"]
+    del old["show"]["shuffle_media_mode"]
+    del old["show"]["shuffle_media_paths"]
     for s in old["surfaces"]:
         for key in ["role", "shape", "light"]:
             del s[key]
@@ -100,7 +102,7 @@ def test_clip_half_open_and_opacity_across_boundary(timeline):
 
 @pytest.mark.parametrize(
     "change",
-    ["overlap", "duplicate", "missing", "disabled", "audio", "duration", "order", "nan", "keys"],
+    ["overlap", "duplicate", "missing", "audio", "duration", "order", "nan", "keys"],
 )
 def test_invalid_timeline(timeline, change):
     d = timeline.model_dump()
@@ -112,8 +114,6 @@ def test_invalid_timeline(timeline, change):
         track["clips"][1]["id"] = "c1"
     if change == "missing":
         track["surface_id"] = "missing"
-    if change == "disabled":
-        d["surfaces"][0]["enabled"] = False
     if change == "audio":
         t["audio"] = {"scene_id": d["scenes"][0]["id"], "duration_seconds": 2}
     if change == "duration":
@@ -126,6 +126,25 @@ def test_invalid_timeline(timeline, change):
         track["opacity"]["keyframes"].reverse()
     with pytest.raises(ValidationError):
         Project.model_validate(d)
+
+
+def test_disabled_timeline_destinations_keep_edits_but_do_not_play(timeline):
+    data = timeline.model_dump(mode="json")
+    data["surfaces"][0]["enabled"] = False
+    project = Project.model_validate(data)
+    assert project.show.timeline.tracks[0].clips[0].id == "c1"
+    assert evaluate(project, 2) == []
+    assert TimelineController(project).snapshot()["upcoming"] == []
+    assert source_bounds(project, []) == []
+
+    data["surfaces"][0]["enabled"] = True
+    data["projectors"][0]["enabled"] = False
+    project = Project.model_validate(data)
+    assert evaluate(project, 2) == []
+    assert TimelineController(project).snapshot()["layers"] == []
+
+    data["projectors"][0]["enabled"] = True
+    assert evaluate(Project.model_validate(data), 2)[0].clip_id == "c1"
 
 
 def test_other_tracks_simultaneous_and_lights(timeline):

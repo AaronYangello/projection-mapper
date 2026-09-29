@@ -97,7 +97,8 @@ textarea:disabled {
 input::placeholder {
   color: #aeb6c2;
 }
-input[type="checkbox"] {
+input[type="checkbox"],
+input[type="radio"] {
   width: 19px;
   height: 19px;
   min-height: 19px;
@@ -1661,6 +1662,32 @@ dialog p {
 }
 .show-workspace .panel {
   margin-bottom: 16px;
+}
+.shuffle-media-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  margin: 16px 0;
+  padding: 10px 14px;
+}
+.shuffle-media-choice legend {
+  padding: 0 5px;
+}
+.shuffle-file-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 4px 14px;
+  max-height: 360px;
+  overflow: auto;
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.shuffle-file-list .check-label span {
+  overflow-wrap: anywhere;
 }
 .show-workspace .save-bar {
   display: flex;

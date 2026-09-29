@@ -64,9 +64,12 @@ def opacity_at(automation: Opacity, seconds: float) -> float:
 
 def evaluate(project: Project, seconds: float) -> list[ActiveLayer]:
     surfaces = {s.id: s for s in project.surfaces}
+    enabled_projectors = {p.id for p in project.projectors if p.enabled}
     result = []
     for track in project.show.timeline.tracks:
         surface = surfaces[track.surface_id]
+        if not surface.enabled or surface.projector_id not in enabled_projectors:
+            continue
         clip = next(
             (
                 c
@@ -95,10 +98,14 @@ def source_bounds(project: Project, entries: list[dict]) -> list[str]:
     """Inspect-backed bounds, separate from pure schema validation and usable before a build."""
     scenes = {s.id: s for s in project.scenes}
     indexed = {e["path"]: e for e in entries}
+    surfaces = {s.id: s for s in project.surfaces}
+    enabled_projectors = {p.id for p in project.projectors if p.enabled}
     errors = []
     clips = [
         (c.id, c.scene_id, c.source_in_seconds, c.duration_seconds)
         for t in project.show.timeline.tracks
+        if surfaces[t.surface_id].enabled
+        and surfaces[t.surface_id].projector_id in enabled_projectors
         for c in t.clips
     ]
     a = project.show.timeline.audio
@@ -155,8 +162,13 @@ class TimelineController:
 
     def snapshot(self):
         t = self.project.show.timeline
+        surfaces = {s.id: s for s in self.project.surfaces}
+        enabled_projectors = {p.id for p in self.project.projectors if p.enabled}
         events = []
         for track in t.tracks:
+            surface = surfaces[track.surface_id]
+            if not surface.enabled or surface.projector_id not in enabled_projectors:
+                continue
             for c in track.clips:
                 events += [
                     {

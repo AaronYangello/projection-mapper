@@ -181,6 +181,8 @@ class Selector(Model):
 
 class Show(Model):
     mode: Literal["shuffle_bag", "timeline"] = "shuffle_bag"
+    shuffle_media_mode: Literal["configured", "all_folder", "selected"] = "configured"
+    shuffle_media_paths: list[str] = Field(default_factory=list)
     timeline: Timeline = Field(default_factory=Timeline)
     max_simultaneous: Literal[1] = 1
     auto_start: bool = True
@@ -192,6 +194,14 @@ class Show(Model):
     seed: int | None = None
     surfaces: Selector = Field(default_factory=Selector)
     scenes: Selector = Field(default_factory=Selector)
+
+    @field_validator("shuffle_media_paths")
+    @classmethod
+    def local_shuffle_paths(cls, paths: list[str]) -> list[str]:
+        normalized = [FileScene.local_media_path(path) for path in paths]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Shuffle media paths must be unique")
+        return normalized
 
     @model_validator(mode="after")
     def positive_cycle(self) -> Self:
@@ -246,8 +256,8 @@ class Project(Model):
         scenes = {s.id: s for s in self.scenes}
         for track in self.show.timeline.tracks:
             surface = surfaces.get(track.surface_id)
-            if not surface or not surface.enabled or not projectors[surface.projector_id].enabled:
-                raise ValueError(f"Track {track.id}: destination surface must exist and be enabled")
+            if not surface:
+                raise ValueError(f"Track {track.id}: destination surface must exist")
             if surface.role == "lighting" and track.clips:
                 raise ValueError(f"Track {track.id}: lighting surfaces cannot contain media clips")
             for clip in track.clips:

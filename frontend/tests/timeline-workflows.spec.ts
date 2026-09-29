@@ -286,7 +286,8 @@ test("media upload probes, detects duplicates, reports errors and cancels", asyn
     mimeType: "image/jpeg",
     buffer: data,
   });
-  await expect(page.getByText(/Uploaded · scan to index/)).toBeVisible();
+  await expect(page.getByText(/Uploaded · 100%/)).toBeVisible();
+  await expect(page.getByText(/Scan complete/)).toBeVisible();
   await input.setInputFiles({
     name: "duplicate.jpg",
     mimeType: "image/jpeg",

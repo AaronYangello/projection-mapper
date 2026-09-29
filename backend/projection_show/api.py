@@ -45,6 +45,14 @@ class MediaPlay(BaseModel):
     scene_id: str
 
 
+class MediaDelete(BaseModel):
+    revision: int
+
+
+class MediaBulkAdd(BaseModel):
+    revision: int
+
+
 def create_app(
     runtime: Runtime, frontend: Path | None = None, *, services: Services | None = None
 ) -> FastAPI:
@@ -220,6 +228,21 @@ def create_app(
     @app.post("/api/media/{asset_id}/add")
     async def add_media(asset_id: str):
         return mapping_call(lambda: runtime.add_media(asset_id))
+
+    @app.post("/api/media/add-all")
+    async def add_all_media(body: MediaBulkAdd):
+        return mapping_call(lambda: runtime.add_all_media(body.revision))
+
+    @app.delete("/api/media/{asset_id}")
+    async def delete_media(asset_id: str, body: MediaDelete):
+        try:
+            return runtime.delete_media(asset_id, body.revision)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                500, "Could not delete media; check the library and rescan"
+            ) from exc
 
     @app.get("/api/media/{asset_id}/thumbnail")
     async def media_thumbnail(asset_id: str):

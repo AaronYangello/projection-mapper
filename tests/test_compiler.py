@@ -65,6 +65,13 @@ def test_profile_slot_reuse_and_limits(compiled_project):
     assert len({r["slot"] for r in layout(Project.model_validate(data))["regions"]}) == 4
 
 
+def test_build_requires_enabled_timeline_destinations(compiled_project):
+    project, _ = compiled_project
+    project.surfaces[0].enabled = False
+    with pytest.raises(ValueError, match="enable its surface and projector"):
+        validate_profile(project)
+
+
 def test_pi5_profile_preserves_4k_canvas_and_uses_1080p_atlas(compiled_project):
     project, _ = compiled_project
     data = project.model_dump(mode="json")

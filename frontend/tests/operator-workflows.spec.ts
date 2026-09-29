@@ -97,6 +97,62 @@ test("media selection is separate from playback; edits survive navigation and sa
   ).toBeDisabled();
 });
 
+test("bulk add and shuffle file selection persist", async ({
+  page,
+  request,
+}) => {
+  await navigation(page, "Media").click();
+  await page
+    .getByRole("button", { name: /Add all playable files to show/ })
+    .click();
+  await expect(page.getByText("1 file added to the show.")).toBeVisible();
+  await navigation(page, "Show").click();
+  await page.getByRole("tab", { name: "Shuffle" }).click();
+  await page.getByRole("radio", { name: "Choose files" }).check();
+  await page.getByRole("checkbox", { name: "sample" }).uncheck();
+  await page.getByRole("checkbox", { name: "clip" }).uncheck();
+  await page.getByRole("button", { name: "Save shuffle media" }).click();
+  await expect(
+    page.getByRole("button", { name: "Save shuffle media" }),
+  ).toBeDisabled();
+  let show = (await (await request.get("/api/project")).json()).project.show;
+  expect(show.shuffle_media_mode).toBe("selected");
+  expect(show.shuffle_media_paths).toEqual(["media/other.png"]);
+  await page.getByRole("radio", { name: "Shuffle all in folder" }).check();
+  await page.getByRole("button", { name: "Save shuffle media" }).click();
+  show = (await (await request.get("/api/project")).json()).project.show;
+  expect(show.shuffle_media_mode).toBe("all_folder");
+  expect(show.shuffle_media_paths).toEqual([]);
+});
+
+test("upload batch scans automatically and Media can delete its file", async ({
+  page,
+  request,
+}) => {
+  await navigation(page, "Media").click();
+  await page
+    .getByRole("region", { name: "Upload media" })
+    .locator('input[type="file"]')
+    .setInputFiles("../docs/screenshots/media.png");
+  await expect(page.getByText(/Scan complete\. 5 files/)).toBeVisible();
+  const assets = (await (await request.get("/api/media")).json()).assets;
+  const uploaded = assets.find((a: { path: string }) =>
+    a.path.endsWith("-media.png"),
+  );
+  expect(uploaded).toBeTruthy();
+  await page.locator(".media-card").filter({ hasText: "media" }).last().click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete file" }).click();
+  await expect(
+    page.getByText("media deleted from the media folder."),
+  ).toBeVisible();
+  expect(
+    (await (await request.get("/api/media")).json()).assets.some(
+      (a: { id: string }) => a.id === uploaded.id,
+    ),
+  ).toBe(false);
+});
+
 test("project draft survives another editor's save and cannot overwrite it", async ({
   page,
 }) => {
@@ -367,6 +423,58 @@ test("common topology edits save without JSON", async ({ page, request }) => {
   await expect(
     page.getByRole("button", { name: "Save & apply project", exact: true }),
   ).toBeDisabled();
+});
+
+test("one-projector and one-surface shortcuts stop and save without deleting mappings", async ({
+  page,
+  request,
+}) => {
+  const originalProject = (await (await request.get("/api/project")).json())
+    .project;
+  const firstProjector = originalProject.projectors[0];
+  const secondSurface = originalProject.surfaces.find(
+    (s: { projector_id: string }) => s.projector_id !== firstProjector.id,
+  );
+  await request.post("/api/runtime/start");
+  await navigation(page, "Project").click();
+  await page.getByText(/^Projectors ·/).click();
+  await page
+    .getByRole("button", { name: `Only ${firstProjector.name}` })
+    .click();
+  const stopAndSave = page.getByRole("button", {
+    name: "Stop show & save project",
+  });
+  await expect(stopAndSave).toBeEnabled();
+  await stopAndSave.click();
+  await expect(page.getByText("Project saved and applied.")).toBeVisible();
+  expect((await (await request.get("/api/status")).json()).transport).toBe(
+    "READY",
+  );
+  let saved = (await (await request.get("/api/project")).json()).project;
+  expect(
+    saved.projectors.filter((p: { enabled: boolean }) => p.enabled),
+  ).toHaveLength(1);
+  expect(saved.surfaces).toHaveLength(originalProject.surfaces.length);
+
+  await page.getByText(/^Surfaces ·/).click();
+  await page
+    .getByRole("button", { name: `Only ${secondSurface.name}` })
+    .click();
+  await page.getByRole("button", { name: "Save & apply project" }).click();
+  saved = (await (await request.get("/api/project")).json()).project;
+  expect(
+    saved.surfaces.filter((s: { enabled: boolean }) => s.enabled),
+  ).toHaveLength(1);
+  expect(
+    saved.surfaces.find((s: { id: string }) => s.id === secondSurface.id)
+      .enabled,
+  ).toBe(true);
+  expect(
+    saved.projectors.find(
+      (p: { id: string }) => p.id === secondSurface.projector_id,
+    ).enabled,
+  ).toBe(true);
+  expect(saved.surfaces).toHaveLength(originalProject.surfaces.length);
 });
 
 test("Space controls playback but never fires while editing a field", async ({

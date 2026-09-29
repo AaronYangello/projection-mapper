@@ -15,7 +15,7 @@ retains the old valid file as `.yaml.bak`. No implicit disk rewrite occurs.
 | `surfaces[]` | Projector ID, logical dimensions, normalized mapping, enabled/foreground flags, tags, ambient profile, media/lighting role, shape and fixed light color |
 | `ambient_profiles[]` | `none`, `solid`, or `particles`; color, opacity, count, speed, size, drift, seed, foreground dimming |
 | `scenes[]` | Named enabled `color`, `image`, `video`, or `audio` sources, arbitrary tags; file paths, fit and clip settings for media |
-| `show` | Saved mode (`shuffle_bag` / `timeline`), existing flat shuffle settings, auto-start, and independent `timeline` definition |
+| `show` | Saved mode (`shuffle_bag` / `timeline`), shuffle media mode (`configured`, `all_folder`, or `selected`), selected media paths, timing, auto-start, and independent `timeline` definition |
 
 IDs contain letters, digits, underscores, or hyphens. Names may contain spaces and need not be
 unique. Referential validation is based on IDs. Unknown keys and unsupported types fail.
@@ -31,8 +31,9 @@ they are not automatically rearranged. Surface rendering follows project array o
 Logical surface dimensions control texture resolution and particle sizes, not where a
 surface lands. Canvas and logical dimensions accept 16–8192 pixels, subject to an aggregate
 100 megapixel target budget and the actual GPU maximum texture size. Lighting draws directly
-and does not allocate full logical-size framebuffers. Timeline clips refer only to enabled
-compatible surfaces; lighting cannot contain media clips, and audio cannot enter shuffle.
+and does not allocate full logical-size framebuffers. Timeline clips may remain saved on
+temporarily disabled surfaces or projectors; those tracks stay dark until re-enabled.
+Lighting cannot contain media clips, and audio cannot enter shuffle.
 
 Ambient particle speed and drift are normalized surface-units per second; size is logical
 pixels. A stable seed plus surface ID yields repeatable particle populations. Opacity and
@@ -44,12 +45,16 @@ flags and projector status apply before tags. Empty eligibility produces a visib
 and ambient-only output. Hold minimum must be positive; fades and gaps may be zero. Timing
 values have an upper bound of one hour. Shuffle supports exactly one foreground cue. Timeline allows independent surface tracks;
 installation limits belong to [named build profiles](build-deploy.md).
+`show.shuffle_media_mode` defaults to `configured` for existing projects. `all_folder` adds indexed, playable video and image files as scenes and shuffles them; a stopped rescan discovers new files. `selected` uses only `show.shuffle_media_paths`. Audio never enters shuffle. The folder and selected modes leave timeline source definitions intact.
 
 ## Safe editing
 
-1. Open Project, make edits, and stop the show using the persistent transport controls.
+1. Open Project and use **Only [projector]**, **Only [surface]**, or the individual visibility
+   checkboxes. All projector, surface, and mapping definitions remain saved. You can restore
+   all outputs with **Enable all projectors** and **Enable all surfaces**.
 2. Save & apply validates the complete project, checks its revision, writes/fsyncs a temporary
    file, and atomically replaces the saved file. The previous valid file becomes `.yaml.bak`.
+   If the show is running, **Stop show & save project** stops it before saving.
 3. The runtime rebuilds its schedule; the renderer observes one new project revision.
 4. Press Start show. A restart reconstructs state from the same YAML. Transient queue position
    is intentionally not persisted.

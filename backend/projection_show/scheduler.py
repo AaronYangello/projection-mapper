@@ -70,6 +70,16 @@ class Scheduler:
                 for s in project.scenes
                 if s.enabled
                 and s.type != "audio"
+                and (
+                    self.settings.shuffle_media_mode == "configured"
+                    or (
+                        s.type in ("video", "image")
+                        and (
+                            self.settings.shuffle_media_mode == "all_folder"
+                            or s.path in self.settings.shuffle_media_paths
+                        )
+                    )
+                )
                 and self.settings.scenes.accepts(s.tags)
                 and s.id not in (unavailable or set())
                 and (s.type != "video" or s.id in self.media_durations)

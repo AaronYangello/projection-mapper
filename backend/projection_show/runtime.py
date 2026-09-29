@@ -4,13 +4,14 @@ import copy
 import logging
 import threading
 import time
+import uuid
 from collections import deque
 from dataclasses import asdict
 
 from .calibration import Calibration, Preview
 from .config.models import Project
 from .config.store import ProjectStore
-from .media.catalog import playback_plan, scan
+from .media.catalog import playback_plan, resolve_media, scan
 from .scheduler import Scheduler
 from .timeline import ShuffleController, TimelineController, source_bounds
 
@@ -68,6 +69,10 @@ class Runtime:
         self.media = scan(
             store.path.parent, [s.path for s in self.project.scenes if s.type != "color"]
         )
+        folder_project = self.with_folder_media(self.project, self.media)
+        if folder_project != self.project:
+            store.save(folder_project)
+            self.project = folder_project
         self.media_durations, self.unavailable_media, self.media_warnings = playback_plan(
             self.project, self.media
         )
@@ -198,6 +203,7 @@ class Runtime:
             raise ValueError("Finish calibration before applying project configuration")
         if self.state != "READY":
             raise ValueError("Stop the show before applying project configuration")
+        project = self.with_folder_media(project, self.media)
         errors = source_bounds(project, self.media)
         if errors:
             raise ValueError("Timeline sources: " + "; ".join(errors))
@@ -275,10 +281,48 @@ class Runtime:
             self.project, self.media_durations, self.unavailable_media | self.failed_media
         )
 
+    @staticmethod
+    def with_folder_media(project: Project, entries: list[dict]) -> Project:
+        if project.show.shuffle_media_mode != "all_folder":
+            return project
+        data = project.model_dump(mode="json")
+        paths = {s.path for s in project.scenes if s.type != "color"}
+        ids = {s.id for s in project.scenes}
+        for entry in entries:
+            if entry["type"] not in ("video", "image") or entry["error"] or entry["path"] in paths:
+                continue
+            scene_id = entry["id"]
+            suffix = 2
+            while scene_id in ids:
+                scene_id = f"{entry['id']}-{suffix}"
+                suffix += 1
+            data["scenes"].append(
+                {
+                    "id": scene_id,
+                    "name": entry["name"],
+                    "type": entry["type"],
+                    "path": entry["path"],
+                    "fit": "cover",
+                }
+            )
+            paths.add(entry["path"])
+            ids.add(scene_id)
+        return (
+            Project.model_validate(data) if len(data["scenes"]) != len(project.scenes) else project
+        )
+
     def install_media_index(self, entries: list[dict]) -> None:
         if self.state != "READY":
             raise ValueError("Stop the show before rescanning media")
+        folder_project = self.with_folder_media(self.project, entries)
+        previous_media = self.media
         self.media = entries
+        if folder_project != self.project:
+            try:
+                self.apply(folder_project)
+            except Exception:
+                self.media = previous_media
+                raise
         self.media_durations, self.unavailable_media, self.media_warnings = playback_plan(
             self.project, entries
         )
@@ -288,6 +332,49 @@ class Runtime:
         self.playback_generation += 1
         self.event("Media indexed", f"{len(entries)} files")
         self.publish()
+
+    def delete_media(self, asset_id: str, revision: int) -> dict:
+        if revision != self.revision:
+            raise ValueError("Project changed; reload before deleting media")
+        if self.state != "READY" or self.calibration.session or self.deployment:
+            raise ValueError(
+                "Stop the show, finish mapping, and unload deployments before deleting media"
+            )
+        entry = next((e for e in self.media if e["id"] == asset_id), None)
+        if not entry:
+            raise ValueError("Media file is no longer indexed; scan the folder again")
+        root = self.store.path.parent
+        path = root / entry["path"]
+        if path.is_symlink():
+            raise ValueError("Deleting symbolic links is not supported")
+        resolve_media(root, entry["path"])
+        data = self.project.model_dump(mode="json")
+        removed_ids = {s["id"] for s in data["scenes"] if s.get("path") == entry["path"]}
+        data["scenes"] = [s for s in data["scenes"] if s["id"] not in removed_ids]
+        data["show"]["shuffle_media_paths"] = [
+            p for p in data["show"]["shuffle_media_paths"] if p != entry["path"]
+        ]
+        timeline = data["show"]["timeline"]
+        for track in timeline["tracks"]:
+            track["clips"] = [c for c in track["clips"] if c["scene_id"] not in removed_ids]
+        if timeline.get("audio") and timeline["audio"]["scene_id"] in removed_ids:
+            timeline["audio"] = None
+        project = Project.model_validate(data)
+        remaining = [e for e in self.media if e["id"] != asset_id]
+        staged = path.with_name(f".deleting-{uuid.uuid4().hex}-{path.name}")
+        path.rename(staged)
+        previous_media = self.media
+        self.media = remaining
+        try:
+            self.apply(project)
+        except Exception:
+            self.media = previous_media
+            staged.rename(path)
+            raise
+        staged.unlink()
+        (root / "cache" / "thumbnails" / f"{asset_id}.jpg").unlink(missing_ok=True)
+        self.event("Media deleted", entry["path"])
+        return {"deleted": asset_id, "revision": self.revision, "assets": self.media}
 
     def add_media(self, asset_id: str) -> dict:
         entry = next((e for e in self.media if e["id"] == asset_id), None)
@@ -307,6 +394,45 @@ class Runtime:
         )
         self.apply(Project.model_validate(data))
         return {"project": self.project.model_dump(mode="json"), "revision": self.revision}
+
+    def add_all_media(self, revision: int) -> dict:
+        if revision != self.revision:
+            raise ValueError("Project changed; reload before adding media")
+        if self.state != "READY" or self.calibration.session or self.deployment:
+            raise ValueError(
+                "Stop the show, finish mapping, and unload deployments before adding media"
+            )
+        data = self.project.model_dump(mode="json")
+        paths = {s.get("path") for s in data["scenes"]}
+        ids = {s["id"] for s in data["scenes"]}
+        added = 0
+        for entry in self.media:
+            if entry["error"] or entry["path"] in paths:
+                continue
+            scene_id = entry["id"]
+            suffix = 2
+            while scene_id in ids:
+                scene_id = f"{entry['id']}-{suffix}"
+                suffix += 1
+            data["scenes"].append(
+                {
+                    "id": scene_id,
+                    "name": entry["name"],
+                    "type": entry["type"],
+                    "path": entry["path"],
+                    "fit": "cover",
+                }
+            )
+            paths.add(entry["path"])
+            ids.add(scene_id)
+            added += 1
+        if added:
+            self.apply(Project.model_validate(data))
+        return {
+            "added": added,
+            "revision": self.revision,
+            "project": self.project.model_dump(mode="json"),
+        }
 
     def play_media(self, surface_id: str, scene_id: str) -> None:
         if self.mode != "shuffle_bag":

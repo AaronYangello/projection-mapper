@@ -70,7 +70,8 @@ See [media playback and sample credits](docs/media.md).
 - **Media:** search files and thumbnails, add reusable scenes, edit names/tags and fit/clip timing,
   and play a saved source on a selected surface. Selection alone never changes output.
 - **Project:** canvas, timing, projector, and surface forms, plus a validated JSON editor for the complete project.
-  Stop the show before saving. Saves are atomic, retain a `.yaml.bak`, and reject stale edits.
+  Use the one-projector or one-surface shortcuts to test without deleting mappings. When
+  playback is active, Stop show & save project does both steps. Saves are atomic, retain a `.yaml.bak`, and reject stale edits.
 - **Diagnostics:** grid, white, color, and border test patterns; renderer telemetry and recent
   activity. Choose **Show** to leave test mode. Blackout overrides every test pattern.
 

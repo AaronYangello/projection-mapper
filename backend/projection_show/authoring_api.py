@@ -23,6 +23,12 @@ class ModeUpdate(BaseModel):
     mode: Literal["shuffle_bag", "timeline"]
 
 
+class ShuffleMediaUpdate(BaseModel):
+    revision: int
+    mode: Literal["configured", "all_folder", "selected"]
+    paths: list[str] = Field(default_factory=list)
+
+
 class Seek(BaseModel):
     seconds: float = Field(ge=0, allow_inf_nan=False)
 
@@ -91,6 +97,56 @@ def routes(runtime, services):
         editable(body.revision)
         data = runtime.project.model_dump(mode="json")
         data["show"]["mode"] = body.mode
+        checked(lambda: runtime.apply(Project.model_validate(data)))
+        return {"revision": runtime.revision, "project": runtime.project.model_dump(mode="json")}
+
+    @api.put("/show/shuffle-media")
+    async def shuffle_media(body: ShuffleMediaUpdate):
+        if body.revision != runtime.revision:
+            raise HTTPException(409, "Project changed; reload before saving")
+        if runtime.state != "READY":
+            raise HTTPException(409, "Stop the show before saving shuffle media")
+        available = {
+            e["path"]: e
+            for e in runtime.media
+            if e["type"] in ("video", "image") and not e["error"]
+        }
+        if body.mode == "selected" and (
+            len(body.paths) != len(set(body.paths))
+            or any(path not in available for path in body.paths)
+        ):
+            raise HTTPException(409, "Selected files changed; scan and choose again")
+        data = runtime.project.model_dump(mode="json")
+        data["show"]["shuffle_media_mode"] = body.mode
+        data["show"]["shuffle_media_paths"] = body.paths if body.mode == "selected" else []
+        paths = (
+            body.paths
+            if body.mode == "selected"
+            else list(available)
+            if body.mode == "all_folder"
+            else []
+        )
+        existing = {s.get("path") for s in data["scenes"]}
+        ids = {s["id"] for s in data["scenes"]}
+        for path in paths:
+            if path in existing:
+                continue
+            entry = available[path]
+            scene_id = entry["id"]
+            suffix = 2
+            while scene_id in ids:
+                scene_id = f"{entry['id']}-{suffix}"
+                suffix += 1
+            data["scenes"].append(
+                {
+                    "id": scene_id,
+                    "name": entry["name"],
+                    "type": entry["type"],
+                    "path": path,
+                    "fit": "cover",
+                }
+            )
+            ids.add(scene_id)
         checked(lambda: runtime.apply(Project.model_validate(data)))
         return {"revision": runtime.revision, "project": runtime.project.model_dump(mode="json")}
 

@@ -6,6 +6,7 @@ import { BuildDeploy } from "./BuildDeploy";
 import type {
   Capabilities,
   Clip,
+  MediaAsset,
   OpacityKey,
   Project,
   Status,
@@ -28,6 +29,18 @@ export function ShowPage({
   reload: () => Promise<unknown>;
 }) {
   const [tab, setTab] = useState("Timeline");
+  const [shuffleMode, setShuffleMode] = useState(
+    project.show.shuffle_media_mode,
+  );
+  const [shufflePaths, setShufflePaths] = useState(
+    project.show.shuffle_media_paths,
+  );
+  const [shuffleBase, setShuffleBase] = useState({
+    mode: project.show.shuffle_media_mode,
+    paths: project.show.shuffle_media_paths,
+  });
+  const [shuffleBaseRevision, setShuffleBaseRevision] = useState(revision);
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const [draft, setDraft] = useState<Timeline>(
     structuredClone(project.show.timeline),
   );
@@ -47,10 +60,14 @@ export function ShowPage({
   }>({ sid: project.surfaces.find((s) => s.enabled)?.id ?? "" });
   const [phone, setPhone] = useState(window.innerWidth < 680);
   const dirty = JSON.stringify(draft) !== JSON.stringify(base);
+  const shuffleDirty =
+    shuffleMode !== shuffleBase.mode ||
+    JSON.stringify(shufflePaths) !== JSON.stringify(shuffleBase.paths);
   const conflict = dirty && revision !== baseRevision;
+  const shuffleConflict = shuffleDirty && revision !== shuffleBaseRevision;
   const stopped = status.transport === "READY" && !status.calibration;
   const editable = !!caps?.timeline_edit && !phone && !status.deployment;
-  useUnsavedWarning(dirty);
+  useUnsavedWarning(dirty || shuffleDirty);
   useEffect(() => {
     void request<Capabilities>("capabilities")
       .then(setCaps)
@@ -70,6 +87,28 @@ export function ShowPage({
       setBaseRevision(revision);
     }
   }, [project, revision]);
+  useEffect(() => {
+    if (
+      !shuffleDirty ||
+      (shuffleMode === project.show.shuffle_media_mode &&
+        JSON.stringify(shufflePaths) ===
+          JSON.stringify(project.show.shuffle_media_paths))
+    ) {
+      setShuffleMode(project.show.shuffle_media_mode);
+      setShufflePaths(project.show.shuffle_media_paths);
+      setShuffleBase({
+        mode: project.show.shuffle_media_mode,
+        paths: project.show.shuffle_media_paths,
+      });
+      setShuffleBaseRevision(revision);
+    }
+  }, [project, revision]);
+  useEffect(() => {
+    if (tab === "Shuffle")
+      void request<{ assets: MediaAsset[] }>("media")
+        .then((data) => setMediaAssets(data.assets))
+        .catch((e) => setError(e.message));
+  }, [tab, project]);
   const track = draft.tracks.find((t) => t.surface_id === selection.sid);
   const surface = project.surfaces.find((s) => s.id === selection.sid);
   const selected = track?.clips.find((c) => c.id === selection.clip);
@@ -226,6 +265,7 @@ export function ShowPage({
             !stopped ||
             busy ||
             dirty ||
+            shuffleDirty ||
             !caps?.timeline_edit ||
             !!status.deployment ||
             project.show.mode ===
@@ -265,9 +305,148 @@ export function ShowPage({
           </p>
           <p>
             Every eligible surface and scene plays once before reshuffling.
-            Change these settings in Project → Automatic playback. The timeline
-            definition stays saved when using Shuffle.
+            Change timing in Project → Automatic playback. The timeline stays
+            saved when using Shuffle.
           </p>
+          <fieldset className="shuffle-media-choice">
+            <legend>Media to shuffle</legend>
+            <label className="check-label">
+              <input
+                type="radio"
+                name="shuffle-media"
+                checked={shuffleMode === "all_folder"}
+                onChange={() => setShuffleMode("all_folder")}
+              />
+              Shuffle all in folder
+            </label>
+            <label className="check-label">
+              <input
+                type="radio"
+                name="shuffle-media"
+                checked={shuffleMode === "selected"}
+                onChange={() => {
+                  if (shuffleMode !== "selected" && !shufflePaths.length)
+                    setShufflePaths(
+                      mediaAssets
+                        .filter(
+                          (a) =>
+                            !a.error &&
+                            a.type !== "audio" &&
+                            (shuffleMode === "all_folder" ||
+                              project.scenes.some((s) => s.path === a.path)),
+                        )
+                        .map((a) => a.path),
+                    );
+                  setShuffleMode("selected");
+                }}
+              />
+              Choose files
+            </label>
+            <label className="check-label">
+              <input
+                type="radio"
+                name="shuffle-media"
+                checked={shuffleMode === "configured"}
+                onChange={() => setShuffleMode("configured")}
+              />
+              Use current show sources
+            </label>
+          </fieldset>
+          {shuffleMode === "all_folder" && (
+            <p className="hint">
+              Uses every playable video and image in this project’s media
+              folder. New files join after a scan.
+            </p>
+          )}
+          {shuffleMode === "selected" && (
+            <div
+              className="shuffle-file-list"
+              aria-label="Shuffle file selection"
+            >
+              {mediaAssets
+                .filter((a) => a.type !== "audio")
+                .map((item) => (
+                  <label key={item.id} className="check-label">
+                    <input
+                      type="checkbox"
+                      disabled={!!item.error}
+                      checked={shufflePaths.includes(item.path)}
+                      onChange={(e) =>
+                        setShufflePaths((paths) =>
+                          e.target.checked
+                            ? [...paths, item.path]
+                            : paths.filter((path) => path !== item.path),
+                        )
+                      }
+                    />
+                    <span>
+                      {item.name}
+                      {item.error ? ` · unavailable: ${item.error}` : ""}
+                    </span>
+                  </label>
+                ))}
+              {!mediaAssets.some((a) => a.type !== "audio") && (
+                <p>
+                  No video or image files are indexed. Upload or scan in Media.
+                </p>
+              )}
+            </div>
+          )}
+          {shuffleConflict && (
+            <p role="alert" className="notice warning">
+              The project changed while you were choosing files. Discard this
+              selection and choose again.
+            </p>
+          )}
+          <div className="button-row">
+            <button
+              className="primary"
+              disabled={
+                !stopped ||
+                busy ||
+                !shuffleDirty ||
+                shuffleConflict ||
+                !!status.deployment
+              }
+              onClick={() =>
+                void action(async () => {
+                  await request("show/shuffle-media", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                      revision,
+                      mode: shuffleMode,
+                      paths: shufflePaths,
+                    }),
+                  });
+                  await reload();
+                  setShuffleBase({
+                    mode: shuffleMode,
+                    paths: shuffleMode === "selected" ? shufflePaths : [],
+                  });
+                  setShuffleBaseRevision(revision + 1);
+                  if (shuffleMode !== "selected") setShufflePaths([]);
+                  setMessage("Shuffle media selection saved.");
+                })
+              }
+            >
+              Save shuffle media
+            </button>
+            {shuffleDirty && (
+              <button
+                onClick={() => {
+                  setShuffleMode(project.show.shuffle_media_mode);
+                  setShufflePaths(project.show.shuffle_media_paths);
+                  setShuffleBase({
+                    mode: project.show.shuffle_media_mode,
+                    paths: project.show.shuffle_media_paths,
+                  });
+                  setShuffleBaseRevision(revision);
+                }}
+              >
+                Discard selection
+              </button>
+            )}
+          </div>
         </section>
       )}
       <div hidden={tab !== "Timeline"}>
