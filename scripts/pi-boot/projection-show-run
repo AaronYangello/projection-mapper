@@ -51,9 +51,16 @@ if [[ -z ${PROJECTION_SHOW_HOST:-} ]]; then
     exit 1
 fi
 
+# Cold Python/media imports on this Pi can take over two minutes. Keep the
+# fullscreen helper alive until the native window actually appears.
+window_wait=${PROJECTION_SHOW_WINDOW_WAIT_SECONDS:-240}
+if [[ ! $window_wait =~ ^[1-9][0-9]*$ ]]; then
+    echo "PROJECTION_SHOW_WINDOW_WAIT_SECONDS must be a positive integer" >&2
+    exit 1
+fi
 (
-    sleep 3
-    for ((attempt = 0; attempt < 40; attempt++)); do
+    deadline=$((SECONDS + window_wait))
+    while ((SECONDS < deadline)); do
         if /usr/bin/wmctrl -r 'Projection Show' -b add,fullscreen 2>/dev/null; then
             /usr/bin/wmctrl -a 'Projection Show' 2>/dev/null || true
             exit 0
