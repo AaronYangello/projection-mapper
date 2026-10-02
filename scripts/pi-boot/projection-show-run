@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir=${PROJECTION_SHOW_REPO:-/home/pi/Projects/projection-mapper}
+export DISPLAY=${DISPLAY:-:0}
+export XAUTHORITY=${XAUTHORITY:-/home/pi/.Xauthority}
+export PROJECTION_SHOW_PROJECT=${PROJECTION_SHOW_PROJECT:-/home/pi/projection-show-installation/project.yaml}
+export PROJECTION_SHOW_DATA_ROOT=${PROJECTION_SHOW_DATA_ROOT:-/home/pi/projection-show-installation/data}
+
+if [[ ! -f "$PROJECTION_SHOW_PROJECT" ]]; then
+    echo "Installation project is missing: $PROJECTION_SHOW_PROJECT" >&2
+    exit 1
+fi
+
+# Prefer the installation mode, but keep the portal and renderer available when a
+# replacement display/EDID does not advertise it. Saved mapping/canvas stay intact.
+output=${PROJECTION_SHOW_OUTPUT:-HDMI-1}
+mode=${PROJECTION_SHOW_MODE:-3840x2160}
+rate=${PROJECTION_SHOW_RATE:-30}
+display_ready=false
+for ((attempt = 0; attempt < 60; attempt++)); do
+    display_query=$(/usr/bin/xrandr --query 2>/dev/null || true)
+    if awk -v output="$output" '$1 == output && $2 == "connected" { found=1 } END { exit !found }' <<< "$display_query"; then
+        if /usr/bin/xrandr --output "$output" --mode "$mode" --rate "$rate" >/dev/null 2>&1; then
+            display_ready=true
+            break
+        fi
+        if /usr/bin/xrandr --output "$output" --auto >/dev/null 2>&1; then
+            echo "Preferred $output mode $mode/$rate unavailable; using the display's preferred mode" >&2
+            display_ready=true
+            break
+        fi
+    fi
+    sleep 2
+done
+if [[ $display_ready != true ]]; then
+    echo "$output did not become ready" >&2
+    exit 1
+fi
+
+for ((attempt = 0; attempt < 60; attempt++)); do
+    tailnet_ip=$(/usr/bin/tailscale ip -4 2>/dev/null || true)
+    if [[ $tailnet_ip =~ ^100\. ]]; then
+        export PROJECTION_SHOW_HOST=$tailnet_ip
+        break
+    fi
+    sleep 2
+done
+if [[ -z ${PROJECTION_SHOW_HOST:-} ]]; then
+    echo "No Tailscale IPv4 address became available" >&2
+    exit 1
+fi
+
+(
+    sleep 3
+    for ((attempt = 0; attempt < 40; attempt++)); do
+        if /usr/bin/wmctrl -r 'Projection Show' -b add,fullscreen 2>/dev/null; then
+            /usr/bin/wmctrl -a 'Projection Show' 2>/dev/null || true
+            exit 0
+        fi
+        sleep 0.25
+    done
+    echo "Native output window did not become available for fullscreen" >&2
+) &
+
+cd "$repo_dir"
+exec "$repo_dir/scripts/run-pi-appliance.sh"

@@ -1,0 +1,15 @@
+[Unit]
+Description=Projection Show appliance
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/home/pi/.local/bin/projection-show-run
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
