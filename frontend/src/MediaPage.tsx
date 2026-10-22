@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Film,
+  Minus,
   Image as ImageIcon,
   Play,
   Plus,
@@ -61,6 +62,7 @@ function Thumbnail({ asset }: { asset: MediaAsset }) {
 
 export function MediaPage({
   project,
+  revision,
   status,
   connected,
   reload,
@@ -68,6 +70,7 @@ export function MediaPage({
   onVisibleWarningsChange,
 }: {
   project: Project;
+  revision: number;
   status: Status;
   connected: boolean;
   reload: () => Promise<unknown>;
@@ -153,6 +156,64 @@ export function MediaPage({
   const addable = assets.filter(
     (a) => !a.error && !project.scenes.some((s) => s.path === a.path),
   );
+  const selectedAssets = assets.filter((a) => selection.ids.includes(a.id));
+  const selectedSources = project.scenes.filter(
+    (s) => s.type !== "color" && selectedAssets.some((a) => a.path === s.path),
+  );
+  const selectedAddable = selectedAssets.filter((a) => {
+    const source = selectedSources.find((s) => s.path === a.path);
+    return (
+      !a.error &&
+      (!source ||
+        !source.enabled ||
+        (project.show.shuffle_media_mode === "selected" &&
+          a.type !== "audio" &&
+          !project.show.shuffle_media_paths.includes(a.path)))
+    );
+  });
+  const selectedRemovable = selectedAssets.filter((a) =>
+    selectedSources.some((s) => s.path === a.path),
+  );
+  const membershipEditable = canEdit && !busy && !dirty && !status.deployment;
+  function changeMembership(operation: "add" | "remove") {
+    if (operation === "remove") {
+      const ids = new Set(selectedSources.map((s) => s.id));
+      const references =
+        project.show.timeline.tracks.reduce(
+          (count, track) =>
+            count + track.clips.filter((c) => ids.has(c.scene_id)).length,
+          0,
+        ) +
+        (project.show.timeline.audio &&
+        ids.has(project.show.timeline.audio.scene_id)
+          ? 1
+          : 0);
+      if (
+        references &&
+        !window.confirm(
+          `Remove ${selectedRemovable.length} files from the show? This also removes ${references} timeline reference${references === 1 ? "" : "s"}. The files stay in the media library.`,
+        )
+      )
+        return;
+    }
+    void action(async () => {
+      const result = await request<{ changed: number }>(
+        "media/show-membership",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            revision,
+            asset_ids: selection.ids,
+            action: operation,
+          }),
+        },
+      );
+      await reload();
+      setMessage(
+        `${result.changed} ${result.changed === 1 ? "file" : "files"} ${operation === "add" ? "added to" : "removed from"} the show.`,
+      );
+    });
+  }
   async function scanFolder() {
     const data = await request<{ assets: MediaAsset[]; folder?: string }>(
       "media/scan",
@@ -400,10 +461,6 @@ export function MediaPage({
               {selection.ids.length} selected
             </span>
           </div>
-          <p className="hint">
-            Shift-click to select a range. Cmd-click (Ctrl-click on
-            Windows/Linux) to toggle files.
-          </p>
           <div className="media-layout">
             <div className="media-grid">
               {filtered.map((item) => {
@@ -467,7 +524,29 @@ export function MediaPage({
                 aria-label="Selected media"
               >
                 <h2>{selection.ids.length} files selected</h2>
-                <p>Select one file to view or edit its settings.</p>
+                <div className="button-row">
+                  <button
+                    className="primary"
+                    disabled={!membershipEditable || !selectedAddable.length}
+                    onClick={() => changeMembership("add")}
+                  >
+                    <Plus size={16} /> Add to show ({selectedAddable.length})
+                  </button>
+                  <button
+                    disabled={!membershipEditable || !selectedRemovable.length}
+                    onClick={() => changeMembership("remove")}
+                  >
+                    <Minus size={16} /> Remove from show (
+                    {selectedRemovable.length})
+                  </button>
+                </div>
+                {project.show.shuffle_media_mode === "all_folder" &&
+                  !!selectedRemovable.length && (
+                    <p className="hint">
+                      Removing files switches Shuffle to an explicit file list
+                      so they stay excluded.
+                    </p>
+                  )}
                 {selection.ids.some(
                   (id) => !filtered.some((a) => a.id === id),
                 ) && (
@@ -475,7 +554,10 @@ export function MediaPage({
                     Some selected files are hidden by your filters.
                   </p>
                 )}
-                <button onClick={() => applySelection({ ids: [], anchor: "" })}>
+                <button
+                  disabled={busy}
+                  onClick={() => applySelection({ ids: [], anchor: "" })}
+                >
                   Clear selection
                 </button>
               </section>

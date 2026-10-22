@@ -38,6 +38,12 @@ uses 422. An authoring role is required to save timeline/mode or invoke the comp
 4. DELETE `/api/media/uploads/{id}` cancels; also abort the browser request.
 5. The browser scans automatically after a completed upload batch. Manual folder copies still need a scan. Upload never starts playback.
 6. POST `/api/media/add-all` with `{revision}` adds every indexed playable file not already in the show. DELETE `/api/media/{asset_id}` with `{revision}` removes a file and its saved references while stopped.
+7. POST `/api/media/show-membership` with `{revision, asset_ids: [...], action: "add" or "remove"}`
+   changes selected show sources atomically while stopped, with no active mapping or deployment.
+   Returns `{changed, revision}`. Add skips unplayable files and enables existing disabled sources;
+   remove clears scene/timeline references but retains files and the index. Removing from `all_folder`
+   Shuffle switches to `selected` with the remaining folder files. Stale revisions or unknown IDs
+   reject the entire request.
 
 The actual content is probed and hashed; declared extension/MIME is insufficient. Limits,
 safe final names, duplicate detection, atomic install and cleanup are in [storage](build-deploy.md#storage-limits).

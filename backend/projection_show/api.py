@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__
 from .agent import agent_manifest
@@ -51,6 +51,12 @@ class MediaDelete(BaseModel):
 
 class MediaBulkAdd(BaseModel):
     revision: int
+
+
+class MediaMembershipUpdate(BaseModel):
+    revision: int
+    asset_ids: list[str] = Field(min_length=1, max_length=500)
+    action: Literal["add", "remove"]
 
 
 def create_app(
@@ -232,6 +238,15 @@ def create_app(
     @app.post("/api/media/add-all")
     async def add_all_media(body: MediaBulkAdd):
         return mapping_call(lambda: runtime.add_all_media(body.revision))
+
+    @app.post("/api/media/show-membership")
+    async def update_media_membership(body: MediaMembershipUpdate):
+        try:
+            return runtime.update_media_membership(body.asset_ids, body.action, body.revision)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, "Show membership could not be saved; try again") from exc
 
     @app.delete("/api/media/{asset_id}")
     async def delete_media(asset_id: str, body: MediaDelete):

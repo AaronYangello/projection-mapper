@@ -711,6 +711,7 @@ export default function App() {
               )}
               <div hidden={page !== "Media"}>
                 <MediaPage
+                  revision={engine.revision}
                   onVisibleWarningsChange={setMediaWarningsShown}
                   project={project}
                   status={status}

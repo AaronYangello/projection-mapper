@@ -251,6 +251,147 @@ test("media details stay visible while browsing and scroll independently on desk
   await page.screenshot({ path: "/tmp/projection-media-mobile.png" });
 });
 
+test("selected media can be added and removed together without deleting files", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await navigation(page, "Media").click();
+  const cards = page.locator(".media-card");
+  await cards.first().click();
+  await cards.last().click({ modifiers: ["Shift"] });
+  const panel = page.getByRole("region", {
+    name: "Selected media",
+    exact: true,
+  });
+  const add = panel.getByRole("button", { name: /^Add to show/ });
+  const remove = panel.getByRole("button", { name: /^Remove from show/ });
+  await expect(add).toHaveText("Add to show (1)");
+  await expect(remove).toHaveText("Remove from show (2)");
+  await expect(page.getByText(/Shift-click to select/)).toHaveCount(0);
+  await panel.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: "/tmp/projection-media-membership-desktop.png",
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await panel.scrollIntoViewIfNeeded();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "/tmp/projection-media-membership-mobile.png",
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await add.click();
+  await expect(
+    page.getByText("1 file added to the show.", { exact: true }),
+  ).toBeVisible();
+  await expect(add).toBeDisabled();
+  await expect(remove).toHaveText("Remove from show (3)");
+  await remove.click();
+  await expect(
+    page.getByText("3 files removed from the show.", { exact: true }),
+  ).toBeVisible();
+  await expect(remove).toBeDisabled();
+  await expect(cards).toHaveCount(4);
+  expect((await (await request.get("/api/media")).json()).assets).toHaveLength(
+    4,
+  );
+  expect(
+    (await (await request.get("/api/project")).json()).project.scenes.every(
+      (scene: { type: string }) => scene.type === "color",
+    ),
+  ).toBeTruthy();
+  await add.click();
+  await expect(
+    page.getByText("3 files added to the show.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Start show", exact: true }).click();
+  await expect(add).toBeDisabled();
+  await expect(remove).toBeDisabled();
+});
+
+test("failed batch membership keeps selection and displays a retryable error", async ({
+  page,
+}) => {
+  await navigation(page, "Media").click();
+  const cards = page.locator(".media-card");
+  await cards.first().click();
+  await cards.last().click({ modifiers: ["Shift"] });
+  await page.route("**/api/media/show-membership", (route) =>
+    route.fulfill({
+      status: 409,
+      json: {
+        detail: "Project changed; reload before changing show membership",
+      },
+    }),
+  );
+  const add = page
+    .getByRole("region", { name: "Selected media", exact: true })
+    .getByRole("button", { name: /^Add to show/ });
+  await add.click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Project changed; reload",
+  );
+  await expect(page.locator('.media-card[aria-pressed="true"]')).toHaveCount(4);
+  await expect(add).toBeEnabled();
+  await page.unroute("**/api/media/show-membership");
+  await add.click();
+  await expect(
+    page.getByText("1 file added to the show.", { exact: true }),
+  ).toBeVisible();
+});
+
+test("bulk removal confirms timeline references and can be cancelled", async ({
+  page,
+  request,
+}) => {
+  const data = await (await request.get("/api/project")).json();
+  data.project.show.timeline = {
+    duration_seconds: 2,
+    loop: true,
+    audio: null,
+    tracks: [
+      {
+        id: "membership-track",
+        surface_id: "plane-1",
+        clips: [
+          {
+            id: "membership-clip",
+            scene_id: "sample",
+            start_seconds: 0,
+            duration_seconds: 1,
+          },
+        ],
+      },
+    ],
+  };
+  expect((await request.put("/api/project", { data })).ok()).toBeTruthy();
+  await page.reload();
+  await navigation(page, "Media").click();
+  const cards = page.locator(".media-card");
+  await cards.first().click();
+  await cards.last().click({ modifiers: ["Shift"] });
+  const remove = page.getByRole("button", { name: /^Remove from show/ });
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("1 timeline reference");
+    await dialog.dismiss();
+  });
+  await remove.click();
+  await expect(remove).toHaveText("Remove from show (2)");
+  page.once("dialog", (dialog) => dialog.accept());
+  await remove.click();
+  await expect(
+    page.getByText("2 files removed from the show.", { exact: true }),
+  ).toBeVisible();
+  expect(
+    (await (await request.get("/api/project")).json()).project.show.timeline
+      .tracks[0].clips,
+  ).toEqual([]);
+});
+
 test("bulk add and shuffle file selection persist", async ({
   page,
   request,

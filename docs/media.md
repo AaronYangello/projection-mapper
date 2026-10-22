@@ -41,6 +41,10 @@ requires a download or an internet connection.
    The selection count includes hidden files. Select one file to inspect or edit its settings.
    On desktop, the details panel stays visible while browsing and scrolls independently when
    its settings exceed the window height. On narrow screens it follows the page normally.
+   With multiple files selected, **Add to show** adds playable sources and **Remove from show**
+   removes saved sources and their timeline references while keeping the physical files.
+   Both actions save the batch together while stopped. Removing files from folder-wide Shuffle
+   switches it to an explicit list of the remaining files so scans do not add them back.
 5. In Show → Shuffle, choose the current saved show sources, all playable video and image files in the folder, or an explicit file list. Folder-wide selection adds new playable files after a scan; the explicit selection stays fixed. Save while stopped. In Media, **Delete file** removes the physical file and any saved scene, shuffle selection, or timeline reference to it after confirmation.
 
 Fit modes are **cover** (crop), **contain** (black bars), **stretch**, and **native** (one source

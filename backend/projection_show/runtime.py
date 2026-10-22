@@ -12,6 +12,7 @@ from .calibration import Calibration, Preview
 from .config.models import Project
 from .config.store import ProjectStore
 from .media.catalog import playback_plan, resolve_media, scan
+from .media.membership import update_membership
 from .scheduler import Scheduler
 from .timeline import ShuffleController, TimelineController, source_bounds
 
@@ -433,6 +434,18 @@ class Runtime:
             "revision": self.revision,
             "project": self.project.model_dump(mode="json"),
         }
+
+    def update_media_membership(self, asset_ids: list[str], action: str, revision: int) -> dict:
+        if revision != self.revision:
+            raise ValueError("Project changed; reload before changing show membership")
+        if self.state != "READY" or self.calibration.session or self.deployment:
+            raise ValueError(
+                "Stop the show, finish mapping, and unload deployments before changing media"
+            )
+        project, changed = update_membership(self.project, self.media, asset_ids, action)
+        if project != self.project:
+            self.apply(project)
+        return {"changed": changed, "revision": self.revision}
 
     def play_media(self, surface_id: str, scene_id: str) -> None:
         if self.mode != "shuffle_bag":
