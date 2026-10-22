@@ -97,6 +97,160 @@ test("media selection is separate from playback; edits survive navigation and sa
   ).toBeDisabled();
 });
 
+test("media supports range, toggle, and additive range selection without playback", async ({
+  page,
+  request,
+}) => {
+  await navigation(page, "Media").click();
+  const cards = page.locator(".media-card");
+  const selected = page.locator('.media-card[aria-pressed="true"]');
+  await expect(cards).toHaveCount(4);
+  await cards.nth(0).click();
+  await cards.nth(3).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveCount(4);
+  // Repeated Shift-click keeps the original anchor, shrinking the range.
+  await cards.nth(1).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveCount(2);
+  await cards.nth(0).click({ modifiers: ["Meta"] });
+  await expect(selected).toHaveCount(1);
+  await expect(cards.nth(1)).toHaveAttribute("aria-pressed", "true");
+  // macOS reserves physical Ctrl-click for its context menu; dispatch the
+  // Windows/Linux click event to verify that modifier on this Mac runner.
+  await cards.nth(3).dispatchEvent("click", { ctrlKey: true });
+  await expect(selected).toHaveCount(2);
+  await cards.nth(2).click({ modifiers: ["Meta", "Shift"] });
+  await expect(selected).toHaveCount(3);
+  await expect(cards.nth(0)).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.getByRole("heading", { name: "3 files selected" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete file", exact: true }),
+  ).toHaveCount(0);
+  expect((await (await request.get("/api/status")).json()).transport).toBe(
+    "READY",
+  );
+  await page
+    .getByRole("button", { name: "Clear selection", exact: true })
+    .click();
+  await expect(selected).toHaveCount(0);
+  await cards.nth(3).click();
+  await cards.nth(1).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveCount(3);
+  await cards.nth(2).click();
+  await expect(selected).toHaveCount(1);
+  await cards.nth(2).click({ modifiers: ["Meta"] });
+  await expect(selected).toHaveCount(0);
+});
+
+test("media ranges follow filters and hidden anchors fall back to the clicked file", async ({
+  page,
+}) => {
+  await navigation(page, "Media").click();
+  const cards = page.locator(".media-card");
+  const selected = page.locator('.media-card[aria-pressed="true"]');
+  await page.locator(".library-tools select").selectOption("image");
+  await expect(cards).toHaveCount(2);
+  await cards.nth(0).click();
+  await cards.nth(1).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveCount(2);
+  await page.locator(".library-tools select").selectOption("all");
+  await expect(selected).toHaveCount(2);
+  await expect(
+    page.getByRole("button", { name: /^Sample video/ }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await page.locator(".library-tools select").selectOption("video");
+  await expect(selected).toHaveCount(0);
+  await expect(
+    page.getByText("Some selected files are hidden by your filters."),
+  ).toBeVisible();
+  await cards.nth(0).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveCount(1);
+  await page.locator(".library-tools select").selectOption("all");
+  await expect(selected).toHaveCount(1);
+});
+
+test("media multi-selection preserves edits until discard is confirmed", async ({
+  page,
+}) => {
+  await navigation(page, "Media").click();
+  const cards = page.locator(".media-card");
+  const sample = page.getByRole("button", { name: /^Sample image/ });
+  const name = page.getByRole("textbox", { name: "Display name", exact: true });
+  await sample.click();
+  await name.fill("Unsaved media name");
+  await cards.nth(0).click({ modifiers: ["Meta"] });
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await expect(name).toHaveValue("Unsaved media name");
+  await expect(page.locator('.media-card[aria-pressed="true"]')).toHaveCount(1);
+  await cards.nth(0).click({ modifiers: ["Shift"] });
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Discard changes", exact: true })
+    .click();
+  await expect(page.locator('.media-card[aria-pressed="true"]')).toHaveCount(4);
+  await sample.click();
+  await expect(name).toHaveValue("Sample image");
+});
+
+test("media details stay visible while browsing and scroll independently on desktop", async ({
+  page,
+}) => {
+  // A larger synthetic catalog makes page scroll independent of the details form.
+  await page.route("**/api/media", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    const image = data.assets.find(
+      (asset: { type: string }) => asset.type === "image",
+    );
+    data.assets.push(
+      ...Array.from({ length: 48 }, (_, index) => ({
+        ...image,
+        id: `extra-${index}`,
+        name: `Extra image ${index}`,
+        path: `media/extra-${index}.png`,
+        thumbnail: null,
+      })),
+    );
+    await route.fulfill({ response, json: data });
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  await navigation(page, "Media").click();
+  await expect(page.locator(".media-card")).toHaveCount(52);
+  await page.getByRole("button", { name: /^Sample video/ }).click();
+  const details = page.getByRole("region", {
+    name: "Selected media",
+    exact: true,
+  });
+  await details.getByText("Crop position & tags", { exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 1100));
+  await expect.poll(async () => (await details.boundingBox())!.y).toBe(80);
+  const bounds = (await details.boundingBox())!;
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(900);
+  await details.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  expect(
+    await details.evaluate((element) => element.scrollTop),
+  ).toBeGreaterThan(0);
+  await expect(
+    details.getByRole("button", { name: "Save settings", exact: true }),
+  ).toBeInViewport();
+  await page.screenshot({ path: "/tmp/projection-media-desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(details).toHaveCSS("position", "static");
+  await expect(details).toHaveCSS("max-height", "none");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await details.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "/tmp/projection-media-mobile.png" });
+});
+
 test("bulk add and shuffle file selection persist", async ({
   page,
   request,

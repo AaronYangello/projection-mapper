@@ -1029,6 +1029,7 @@ form {
   align-items: start;
 }
 .media-card {
+  user-select: none;
   padding: 0 0 12px;
   display: flex;
   flex-direction: column;
@@ -1070,6 +1071,14 @@ form {
 }
 .media-card > .media-membership {
   color: var(--accent);
+}
+.media-details {
+  position: sticky;
+  top: 80px;
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--line) var(--panel);
 }
 .media-details h2 {
   overflow-wrap: anywhere;
@@ -1180,6 +1189,12 @@ dialog p {
   .runtime-layout,
   .media-layout {
     grid-template-columns: 1fr;
+  }
+  .media-details {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+    scrollbar-gutter: auto;
   }
   .queue {
     display: grid;

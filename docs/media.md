@@ -35,6 +35,12 @@ requires a download or an internet connection.
 4. While stopped, edit the display name, enabled state, tags, and that scene's fit, focal point, clip range, and playback settings, then
    save. Search matches names, paths, and tags; type filters also include Needs attention.
    Drafts stay in place when changing pages. These are project settings, not per-browser player settings.
+   Click a card to select one file, Cmd-click (Ctrl-click on Windows/Linux) to toggle individual
+   files, or Shift-click to select a range in the displayed order. Cmd/Ctrl+Shift-click adds a
+   range to the selection. Filters preserve selected files; ranges include only visible cards.
+   The selection count includes hidden files. Select one file to inspect or edit its settings.
+   On desktop, the details panel stays visible while browsing and scrolls independently when
+   its settings exceed the window height. On narrow screens it follows the page normally.
 5. In Show → Shuffle, choose the current saved show sources, all playable video and image files in the folder, or an explicit file list. Folder-wide selection adds new playable files after a scan; the explicit selection stays fixed. Save while stopped. In Media, **Delete file** removes the physical file and any saved scene, shuffle selection, or timeline reference to it after confirmation.
 
 Fit modes are **cover** (crop), **contain** (black bars), **stretch**, and **native** (one source

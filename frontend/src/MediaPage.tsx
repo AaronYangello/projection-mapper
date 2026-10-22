@@ -18,6 +18,7 @@ import { DiscardDialog, useUnsavedWarning } from "./editing";
 import type { MediaAsset, Project, Status } from "./types";
 
 type Scene = Project["scenes"][number];
+type MediaSelection = { ids: string[]; anchor: string };
 function Thumbnail({ asset }: { asset: MediaAsset }) {
   const [url, setUrl] = useState("");
   useEffect(() => {
@@ -79,8 +80,13 @@ export function MediaPage({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState("");
-  const [pendingSelection, setPendingSelection] = useState<string | null>(null);
+  const [selection, setSelection] = useState<MediaSelection>({
+    ids: [],
+    anchor: "",
+  });
+  const [pendingSelection, setPendingSelection] =
+    useState<MediaSelection | null>(null);
+  const selected = selection.ids.length === 1 ? selection.ids[0] : "";
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("all");
   const [scanRevision, setScanRevision] = useState(0);
@@ -118,7 +124,7 @@ export function MediaPage({
       .then((data) => {
         setAssets(data.assets);
         setFolder(data.folder ?? "");
-        setSelected(data.assets[0]?.id ?? "");
+        resetSelection(data.assets[0]?.id);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -155,24 +161,67 @@ export function MediaPage({
     setAssets(data.assets);
     if (data.folder) setFolder(data.folder);
     setScanRevision((v) => v + 1);
-    if (!data.assets.some((a) => a.id === selected))
-      setSelected(data.assets[0]?.id ?? "");
+    setSelection((current) => {
+      const ids = current.ids.filter((id) =>
+        data.assets.some((a) => a.id === id),
+      );
+      if (!ids.length && data.assets[0]) ids.push(data.assets[0].id);
+      return {
+        ids,
+        anchor: ids.includes(current.anchor) ? current.anchor : (ids[0] ?? ""),
+      };
+    });
     await reload();
     setMessage(
       `Scan complete. ${data.assets.length} files, ${data.assets.filter((a) => a.error).length} need attention.`,
     );
   }
-  function select(id: string) {
-    if (id === selected) return;
+  function resetSelection(id?: string) {
+    setSelection({ ids: id ? [id] : [], anchor: id ?? "" });
+  }
+  function applySelection(next: MediaSelection) {
+    if (
+      next.ids.length === selection.ids.length &&
+      next.ids.every((id) => selection.ids.includes(id))
+    ) {
+      setSelection(next);
+      return;
+    }
     if (dirty) {
-      setPendingSelection(id);
+      setPendingSelection(next);
       return;
     }
     setDraft(null);
     setBase(null);
-    setSelected(id);
+    setSelection(next);
     setMessage("");
     setError("");
+  }
+  function select(
+    id: string,
+    modifiers: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
+  ) {
+    const additive = modifiers.metaKey || modifiers.ctrlKey;
+    const anchorIndex = filtered.findIndex((a) => a.id === selection.anchor);
+    if (modifiers.shiftKey && anchorIndex !== -1) {
+      const index = filtered.findIndex((a) => a.id === id);
+      const range = filtered
+        .slice(Math.min(anchorIndex, index), Math.max(anchorIndex, index) + 1)
+        .map((a) => a.id);
+      applySelection({
+        ids: additive ? [...new Set([...selection.ids, ...range])] : range,
+        anchor: selection.anchor,
+      });
+    } else {
+      applySelection({
+        ids: additive
+          ? selection.ids.includes(id)
+            ? selection.ids.filter((selectedId) => selectedId !== id)
+            : [...selection.ids, id]
+          : [id],
+        anchor: id,
+      });
+    }
   }
   function update(change: Partial<Scene>) {
     if (draft) setDraft({ ...draft, ...change });
@@ -347,19 +396,27 @@ export function MediaPage({
               </select>
             </label>
             <span className="subtle" role="status">
-              {filtered.length} of {assets.length} files
+              {filtered.length} of {assets.length} files ·{" "}
+              {selection.ids.length} selected
             </span>
           </div>
+          <p className="hint">
+            Shift-click to select a range. Cmd-click (Ctrl-click on
+            Windows/Linux) to toggle files.
+          </p>
           <div className="media-layout">
             <div className="media-grid">
               {filtered.map((item) => {
                 const source = project.scenes.find((s) => s.path === item.path);
                 return (
                   <button
-                    className={`media-card ${item.id === selected ? "selected" : ""} ${item.error ? "has-error" : ""}`}
-                    aria-pressed={item.id === selected}
+                    className={`media-card ${selection.ids.includes(item.id) ? "selected" : ""} ${item.error ? "has-error" : ""}`}
+                    aria-pressed={selection.ids.includes(item.id)}
                     key={item.id}
-                    onClick={() => select(item.id)}
+                    onClick={(event) => select(item.id, event)}
+                    onMouseDown={(event) => {
+                      if (event.shiftKey) event.preventDefault();
+                    }}
                   >
                     <Thumbnail
                       key={`${item.id}-${scanRevision}`}
@@ -404,6 +461,25 @@ export function MediaPage({
                 </div>
               )}
             </div>
+            {selection.ids.length > 1 && (
+              <section
+                className="panel form-panel media-details"
+                aria-label="Selected media"
+              >
+                <h2>{selection.ids.length} files selected</h2>
+                <p>Select one file to view or edit its settings.</p>
+                {selection.ids.some(
+                  (id) => !filtered.some((a) => a.id === id),
+                ) && (
+                  <p className="hint">
+                    Some selected files are hidden by your filters.
+                  </p>
+                )}
+                <button onClick={() => applySelection({ ids: [], anchor: "" })}>
+                  Clear selection
+                </button>
+              </section>
+            )}
             {asset && (
               <section
                 className="panel form-panel media-details"
@@ -446,7 +522,7 @@ export function MediaPage({
                         },
                       );
                       setAssets(result.assets);
-                      setSelected(result.assets[0]?.id ?? "");
+                      resetSelection(result.assets[0]?.id);
                       setDraft(null);
                       setBase(null);
                       await reload();
@@ -849,7 +925,7 @@ export function MediaPage({
         onDiscard={() => {
           setDraft(null);
           setBase(null);
-          setSelected(pendingSelection ?? "");
+          if (pendingSelection) setSelection(pendingSelection);
           setPendingSelection(null);
           setMessage("");
         }}
