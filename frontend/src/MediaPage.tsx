@@ -596,20 +596,22 @@ export function MediaPage({
                     )
                       return;
                     void action(async () => {
-                      const result = await request<{ assets: MediaAsset[] }>(
-                        `media/${asset.id}`,
-                        {
-                          method: "DELETE",
-                          body: JSON.stringify({ revision: status.revision }),
-                        },
-                      );
+                      const result = await request<{
+                        assets: MediaAsset[];
+                        file_missing: boolean;
+                      }>(`media/${asset.id}`, {
+                        method: "DELETE",
+                        body: JSON.stringify({ revision }),
+                      });
                       setAssets(result.assets);
                       resetSelection(result.assets[0]?.id);
                       setDraft(null);
                       setBase(null);
                       await reload();
                       setMessage(
-                        `${asset.name} deleted from the media folder.`,
+                        result.file_missing
+                          ? `${asset.name} removed from the library. The file was already missing.`
+                          : `${asset.name} deleted from the media folder.`,
                       );
                     });
                   }}

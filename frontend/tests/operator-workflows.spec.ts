@@ -448,6 +448,47 @@ test("upload batch scans automatically and Media can delete its file", async ({
   ).toBe(false);
 });
 
+test("a missing media entry can be deleted from the library", async ({
+  page,
+  request,
+}) => {
+  const data = await (await request.get("/api/project")).json();
+  data.project.scenes.push({
+    id: "missing-delete",
+    name: "Missing sample",
+    type: "video",
+    path: "media/missing-delete.mp4",
+  });
+  expect((await request.put("/api/project", { data })).ok()).toBeTruthy();
+  expect((await request.post("/api/media/scan")).ok()).toBeTruthy();
+  await page.reload();
+  await navigation(page, "Media").click();
+  await page.getByRole("button", { name: /^Missing sample/ }).click();
+  const panel = page.getByRole("region", {
+    name: "Selected media",
+    exact: true,
+  });
+  await expect(panel).toContainText("Media file is missing");
+  page.once("dialog", (dialog) => dialog.accept());
+  await panel.getByRole("button", { name: "Delete file", exact: true }).click();
+  await expect(
+    page.getByText(
+      "missing-delete removed from the library. The file was already missing.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  expect(
+    (await (await request.get("/api/media")).json()).assets.some(
+      (asset: { path: string }) => asset.path === "media/missing-delete.mp4",
+    ),
+  ).toBe(false);
+  expect(
+    (await (await request.get("/api/project")).json()).project.scenes.some(
+      (scene: { id: string }) => scene.id === "missing-delete",
+    ),
+  ).toBe(false);
+});
+
 test("project draft survives another editor's save and cannot overwrite it", async ({
   page,
 }) => {

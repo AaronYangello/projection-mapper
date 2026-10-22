@@ -9,7 +9,7 @@ from collections import deque
 from dataclasses import asdict
 
 from .calibration import Calibration, Preview
-from .config.models import Project
+from .config.models import FileScene, Project
 from .config.store import ProjectStore
 from .media.catalog import playback_plan, resolve_media, scan
 from .media.membership import update_membership
@@ -345,10 +345,14 @@ class Runtime:
         if not entry:
             raise ValueError("Media file is no longer indexed; scan the folder again")
         root = self.store.path.parent
-        path = root / entry["path"]
+        path = root / FileScene.local_media_path(entry["path"])
         if path.is_symlink():
             raise ValueError("Deleting symbolic links is not supported")
-        resolve_media(root, entry["path"])
+        if not path.resolve().is_relative_to(root.resolve() / "media"):
+            raise ValueError("Media symlink escapes the project's media directory")
+        file_missing = not path.exists()
+        if not file_missing:
+            resolve_media(root, entry["path"])
         data = self.project.model_dump(mode="json")
         removed_ids = {s["id"] for s in data["scenes"] if s.get("path") == entry["path"]}
         data["scenes"] = [s for s in data["scenes"] if s["id"] not in removed_ids]
@@ -362,20 +366,29 @@ class Runtime:
             timeline["audio"] = None
         project = Project.model_validate(data)
         remaining = [e for e in self.media if e["id"] != asset_id]
-        staged = path.with_name(f".deleting-{uuid.uuid4().hex}-{path.name}")
-        path.rename(staged)
+        staged = None
+        if not file_missing:
+            staged = path.with_name(f".deleting-{uuid.uuid4().hex}-{path.name}")
+            path.rename(staged)
         previous_media = self.media
         self.media = remaining
         try:
             self.apply(project)
         except Exception:
             self.media = previous_media
-            staged.rename(path)
+            if staged is not None:
+                staged.rename(path)
             raise
-        staged.unlink()
+        if staged is not None:
+            staged.unlink()
         (root / "cache" / "thumbnails" / f"{asset_id}.jpg").unlink(missing_ok=True)
         self.event("Media deleted", entry["path"])
-        return {"deleted": asset_id, "revision": self.revision, "assets": self.media}
+        return {
+            "deleted": asset_id,
+            "file_missing": file_missing,
+            "revision": self.revision,
+            "assets": self.media,
+        }
 
     def add_media(self, asset_id: str) -> dict:
         entry = next((e for e in self.media if e["id"] == asset_id), None)
