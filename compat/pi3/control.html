@@ -440,7 +440,9 @@ function paint() {
   if (state) {
     updateChoices();
     el.project.textContent = state.project_name;
-    el.resolution.textContent = state.width + " × " + state.height + " canvas";
+    const texture = selectedSurface() && selectedSurface().texture;
+    el.resolution.textContent = state.width + " × " + state.height + " canvas" +
+      (texture ? " · " + texture.width + " × " + texture.height + " video texture" : "");
     el.board.style.setProperty("--board-ratio", (100 * state.height / state.width) + "%");
     el.play.textContent = state.transport === "playing" ? "Pause" : (state.transport === "paused" ? "Resume show" : "Play show");
     el.blackout.textContent = state.blackout ? "Restore output" : "Blackout";

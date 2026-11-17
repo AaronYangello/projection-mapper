@@ -761,6 +761,46 @@ test("common topology edits save without JSON", async ({ page, request }) => {
   ).toBeDisabled();
 });
 
+test("save a Pi 3 texture override and match a surface to its timeline video", async ({
+  page,
+  request,
+}) => {
+  const { project, revision } = await (
+    await request.get("/api/project")
+  ).json();
+  const surface = project.surfaces[0];
+  project.show.timeline.tracks = [
+    {
+      id: "video-track",
+      surface_id: surface.id,
+      clips: [{ id: "opening", scene_id: "clip", duration_seconds: 1 }],
+    },
+  ];
+  project.show.timeline.track_order = [surface.id];
+  expect(
+    (await request.put("/api/project", { data: { project, revision } })).ok(),
+  ).toBeTruthy();
+  await page.reload();
+  await navigation(page, "Project").click();
+  const texture = page.getByLabel("Pi 3 texture atlas");
+  await expect(texture).toHaveValue("auto");
+  await texture.selectOption("1024");
+  await page.getByText(/^Surfaces ·/).click();
+  const fields = page.getByRole("group", { name: surface.name, exact: true });
+  await fields
+    .getByRole("button", { name: "Match timeline video · 64 × 32" })
+    .click();
+  await expect(fields.getByLabel("Content width (pixels)")).toHaveValue("64");
+  await expect(fields.getByLabel("Content height (pixels)")).toHaveValue("32");
+  await fields.getByLabel("Content width (pixels)").fill("96");
+  await page.getByRole("button", { name: "Save & apply project" }).click();
+  await expect(page.getByText("Project saved and applied.")).toBeVisible();
+  const saved = (await (await request.get("/api/project")).json()).project;
+  expect(saved.pi3_texture_size).toBe(1024);
+  expect(saved.surfaces[0].logical).toEqual({ width: 96, height: 32 });
+  expect(saved.surfaces[0].mapping).toEqual(surface.mapping);
+});
+
 test("one-projector and one-surface shortcuts stop and save without deleting mappings", async ({
   page,
   request,

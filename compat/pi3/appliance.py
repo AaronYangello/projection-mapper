@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent
 PATTERNS = {"show": 0, "grid": 1, "white": 2, "border": 3}
+TEXTURE_SIZES = (512, 768, 1024)
+AUTO_MIN_FPS = 36
 PRIVATE = tuple(
     ipaddress.ip_network(network)
     for network in (
@@ -107,11 +109,22 @@ def supported(renderer):
         return False
 
 
+def atlas_dimensions(path):
+    with path.open("rb") as file:
+        header = file.read(16)
+    if len(header) != 16:
+        raise ValueError("Incomplete Pi 3 texture atlas")
+    magic, width, height, frames = struct.unpack("<4sIII", header)
+    if magic != b"PSP1" or not (0 < width <= 1024 and 0 < height <= 1024 and frames):
+        raise ValueError("Invalid Pi 3 texture atlas")
+    return width, height
+
+
 class Appliance:
     def __init__(self, show_file, project, audio_device, hidden):
         self.show = json.loads(show_file.read_text())
-        self.atlas = str(show_file.with_name("atlas.psp"))
-        if not Path(self.atlas).is_file():
+        baseline = show_file.with_name("atlas.psp")
+        if not baseline.is_file():
             raise ValueError("Pi 3 atlas.psp is missing next to show.json")
         self.project = project
         self.audio_device = audio_device
@@ -142,12 +155,54 @@ class Appliance:
                 if sid in self.by_id:
                     self.saved[sid] = quad(value)
         self.draft = copy.deepcopy(self.saved)
+        self.atlas = str(baseline)
+        self.atlas_size = atlas_dimensions(baseline)
+        texture_settings = self.show.get("texture_atlas", {})
+        self.texture_setting = texture_settings.get("setting")
+        if self.texture_setting == "auto":
+            sizes = texture_settings.get("sizes", [])
+            self.select_texture_variant(baseline, sizes)
+
+    def select_texture_variant(self, baseline, sizes):
+        candidates = [n for n in reversed(TEXTURE_SIZES[1:]) if n in sizes]
+        if not candidates:
+            return
+        self.write_geometry()
+        for size in candidates:
+            path = baseline.with_name("atlas-{}.psp".format(size))
+            try:
+                if atlas_dimensions(path) != (size, size):
+                    continue
+                result = subprocess.check_output(
+                    [str(ROOT / "renderer"), str(self.geometry), str(path), "--measure"],
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True,
+                    timeout=8,
+                )
+                fps = next(
+                    (
+                        float(line.split()[1])
+                        for line in result.splitlines()
+                        if line.startswith("BENCH ")
+                    ),
+                    0,
+                )
+                print("Atlas {}: {:.1f} FPS offscreen".format(size, fps), flush=True)
+                if fps >= AUTO_MIN_FPS:
+                    self.atlas = str(path)
+                    self.atlas_size = (size, size)
+                    return
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                print("Atlas {} unavailable: {}".format(size, exc), flush=True)
 
     def state(self):
         return dict(
             project_name=self.show["project_name"],
             width=self.show["width"],
             height=self.show["height"],
+            texture_atlas=dict(
+                width=self.atlas_size[0], height=self.atlas_size[1], setting=self.texture_setting
+            ),
             duration=self.show["duration"],
             position=self.position,
             transport=self.transport,
@@ -163,6 +218,12 @@ class Appliance:
                     name=s["name"],
                     role=s["role"],
                     shape=s["shape"],
+                    texture={
+                        "width": round(self.atlas_size[0] * s["uv"][2]),
+                        "height": round(self.atlas_size[1] * s["uv"][3]),
+                    }
+                    if s["role"] == "media"
+                    else None,
                     points=self.draft[s["id"]],
                     dirty=self.draft[s["id"]] != self.saved[s["id"]],
                 )

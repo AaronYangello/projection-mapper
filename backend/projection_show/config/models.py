@@ -217,6 +217,7 @@ class Project(Model):
     name: str = Field(min_length=1, max_length=120)
     description: str = ""
     canvas: Canvas = Field(default_factory=Canvas)
+    pi3_texture_size: Literal["auto", 384, 512, 768, 1024] = "auto"
     projectors: list[Projector] = Field(default_factory=list)
     surfaces: list[Surface] = Field(default_factory=list)
     ambient_profiles: list[Ambient] = Field(default_factory=list)

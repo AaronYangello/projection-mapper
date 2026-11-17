@@ -32,6 +32,7 @@ enum { ALSA_PLAYBACK = 0, ALSA_NONBLOCK = 1, ALSA_S16_LE = 2, ALSA_INTERLEAVED =
 #define AUDIO_RATE 48000
 #define FPS 30
 #define KEY_INTERVAL 30
+#define MAX_ATLAS_SIZE 1024
 
 typedef struct { double time, value; int hold; } Key;
 typedef struct {
@@ -53,6 +54,7 @@ static DISPMANX_DISPLAY_HANDLE_T dispman;
 static GLuint program, texture;
 static GLint position, uv, geometry, region, color, shape, size, style, atlas_on, blend;
 static long audio_offset, audio_end, audio_written;
+static double audio_drain_deadline;
 static const char *audio_device;
 static FILE *audio_file;
 static snd_pcm_t *pcm;
@@ -88,7 +90,10 @@ static void open_atlas(const char *path) {
     atlas_w = word(atlas_file);
     atlas_h = word(atlas_file);
     frame_total = word(atlas_file);
-    if (!atlas_w || !atlas_h || atlas_w > 512 || atlas_h > 512 ||
+    GLint gpu_limit = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &gpu_limit);
+    if (!atlas_w || !atlas_h || atlas_w > MAX_ATLAS_SIZE || atlas_h > MAX_ATLAS_SIZE ||
+        gpu_limit <= 0 || atlas_w > (unsigned)gpu_limit || atlas_h > (unsigned)gpu_limit ||
         !frame_total || frame_total > 108000) fail("Pi atlas exceeds limits");
     pixels_len = atlas_w * atlas_h * 2;
     offsets = calloc(frame_total + 1, sizeof(*offsets));
@@ -296,6 +301,30 @@ static void draw(void) {
         fail("Projector frame could not be presented");
     dirty = 0;
 }
+static void measure_atlas(void) {
+    unsigned first = 0, last = frame_total < KEY_INTERVAL ? frame_total : KEY_INTERVAL;
+    uint32_t largest = 0;
+    // A busy keyframe interval exercises SD reads, decompression, GPU upload and drawing.
+    for (unsigned start = 0; start < frame_total; start += KEY_INTERVAL) {
+        unsigned end = start + KEY_INTERVAL;
+        if (end > frame_total) break;
+        uint32_t length = offsets[end] - offsets[start];
+        if (length > largest) {
+            largest = length;
+            first = start;
+            last = end;
+        }
+    }
+    stopped = 0;
+    double start = clock_sec();
+    for (unsigned frame = first; frame < last; frame++) {
+        current = frame / (double)FPS;
+        frame_at((int)frame);
+        draw();
+        glFinish();
+    }
+    printf("BENCH %.2f\n", (last - first) / (clock_sec() - start));
+}
 static void load(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f || fscanf(f, "%d%d%d%lf%d%d%ld%ld", &count, &logical_w, &logical_h, &duration,
@@ -319,6 +348,7 @@ static void load(const char *path) {
     fclose(f);
 }
 static void close_audio(void) {
+    audio_drain_deadline = 0;
     if (pcm) { snd_pcm_drop(pcm); snd_pcm_close(pcm); pcm = NULL; }
 }
 static void pause_show(void) {
@@ -350,6 +380,7 @@ static void start_show(void) {
 }
 static void update_clock(void) {
     if (!playing) return;
+    int audio_finished = 0;
     if (pcm) {
         long available = audio_end - audio_written;
         if (available > 0) {
@@ -362,15 +393,25 @@ static void update_clock(void) {
                 fail("Audio device stopped responding");
         }
         long delay = 0;
-        if (snd_pcm_delay(pcm, &delay) >= 0) {
+        int have_delay = snd_pcm_delay(pcm, &delay) >= 0;
+        if (have_delay) {
             double reported = (audio_written - (delay > 0 ? delay : 0)) / (double)AUDIO_RATE;
             if (reported > current) current = reported;
+        }
+        if (audio_written >= audio_end) {
+            double now = clock_sec();
+            // Some HDMI drivers keep reporting a small delay after the final sample.
+            if (!audio_drain_deadline) {
+                double pending = have_delay ? fmax(0, delay) / AUDIO_RATE : 0.1;
+                audio_drain_deadline = now + pending + 0.025;
+            }
+            audio_finished = current >= audio_end / (double)AUDIO_RATE - 0.0005 ||
+                             now >= audio_drain_deadline;
         }
         /* ALSA's null sink is for bounded hardware tests and consumes samples immediately. */
         if (!strcmp(audio_device, "null")) current = clock_sec() - base_time + base_position;
     } else current = clock_sec() - base_time + base_position;
-    if (current >= duration - 0.0005 || (pcm && audio_written >= audio_end &&
-        current >= audio_end / (double)AUDIO_RATE - 0.0005)) {
+    if (current >= duration - 0.0005 || audio_finished) {
         pause_show();
         if (looping) { current = 0; start_show(); }
         else current = duration;
@@ -438,19 +479,25 @@ int main(int argc, char **argv) {
     signal(SIGTERM, on_signal);
     signal(SIGINT, on_signal);
     int probe = argc == 2 && !strcmp(argv[1], "--probe");
+    int measure = argc == 4 && !strcmp(argv[3], "--measure");
     int hidden = argc == 6 && !strcmp(argv[5], "--hidden");
     int bench = argc == 6 && !hidden;
-    if (!probe && argc != 5 && !bench && !hidden)
+    if (!probe && !measure && argc != 5 && !bench && !hidden)
         fail("Usage: renderer geometry.txt atlas.psp master.wav ALSA_DEVICE [benchmark_seconds]");
     if (probe) logical_w = logical_h = 64;
     else load(argv[1]);
-    open_display(probe || bench || hidden);
+    open_display(probe || bench || hidden || measure);
     if (probe) return 0;
+    open_atlas(argv[2]);
+    setup_shader();
+    if (measure) {
+        measure_atlas();
+        eglTerminate(display);
+        return 0;
+    }
     if (bench) max_time = strtod(argv[5], NULL);
     audio_device = argv[4];
     if (has_audio && !(audio_file = fopen(argv[3], "rb"))) fail("Cannot open master audio");
-    open_atlas(argv[2]);
-    setup_shader();
     if (fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK) < 0) fail("Cannot configure player controls");
     double started = clock_sec(), window_start = started;
     unsigned frames = 0, dropped = 0, total = 0;

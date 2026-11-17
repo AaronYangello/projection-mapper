@@ -22,11 +22,33 @@ normal Python environment. It uses the existing bundle rather than editing the s
   path/to/extracted/playback.mp4 path/to/project/builds/pi3
 ```
 
-Transfer `builds/pi3/atlas.psp` and `builds/pi3/show.json` along with the referenced
-master WAV. The converter makes a seekable 512 × 512 RGB565 texture atlas at 30 fps.
-With four faces, that is a 256 × 256 texture per atlas slot. HDMI output uses the
-connected display's negotiated mode, with the saved show geometry scaled uniformly.
-The renderer uses ALSA sample position for timing and VideoCore for projection warps.
+On the authoring computer, **Project → Identity & output → Pi 3 texture atlas**
+sets the playback detail. The setting is saved as `pi3_texture_size`.
+Choose **Auto** or set **384**, **512**, **768**, or **1024** manually. A three-video show
+gets 192 × 192, 256 × 256, 384 × 384, or 512 × 512 pixels per video respectively. All sizes
+use 30 fps RGB565. A manual choice uses that size on the Pi and can drop frames
+on busy clips. You can test a different size without rebuilding the original
+`.pshow` by running the converter again with `--texture-size 768`, for example.
+
+Auto always prepares 512 × 512 and adds larger candidates where the source and
+surface sizes could benefit. The Pi tests a busy section of each candidate,
+starting with the largest, and selects one that reaches at least 36 fps
+offscreen to leave room for 30 fps playback. It falls back to 512 if neither
+larger size passes. Check smoothness with the finished show and HDMI audio.
+Long or busy shows can hit the 2 GiB limit for an individual atlas.
+
+Under **Project → Surfaces**, **Match timeline video** copies the assigned
+video dimensions from the media catalog into the surface's content size. Width
+and height can also be entered directly. The action keeps the mapped corners.
+If the surface has videos of different sizes, enter the intended size yourself.
+Rebuild the `.pshow` after changing the content dimensions.
+
+Transfer the entire `builds/pi3/` directory, including any `atlas-*.psp` files,
+along with the referenced master WAV. The control page displays the installed
+texture dimensions for the selected video surface. HDMI output uses the
+connected display's negotiated mode, with the saved show geometry scaled
+uniformly. The renderer uses ALSA sample position for timing and VideoCore
+for projection warps.
 
 On device, use the same launcher for automatic capability selection:
 

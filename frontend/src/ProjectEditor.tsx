@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Save } from "lucide-react";
 import { useUnsavedWarning } from "./editing";
 import { request } from "./api";
-import type { Project } from "./types";
+import type { MediaAsset, Project } from "./types";
 
 export function ProjectEditor({
   project,
@@ -22,6 +22,8 @@ export function ProjectEditor({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [surfacesOpen, setSurfacesOpen] = useState(false);
+  const [assets, setAssets] = useState<MediaAsset[] | null>(null);
   useEffect(() => {
     if (
       raw === JSON.stringify(base, null, 2) ||
@@ -32,8 +34,26 @@ export function ProjectEditor({
       setRaw(JSON.stringify(project, null, 2));
     }
   }, [project]);
+  useEffect(() => {
+    if (!surfacesOpen) return;
+    let cancelled = false;
+    void request<{ assets: MediaAsset[] }>("media")
+      .then((result) => {
+        if (!cancelled) setAssets(result.assets);
+      })
+      .catch(() => {
+        if (!cancelled) setAssets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [surfacesOpen, project]);
   const dirty = raw !== JSON.stringify(base, null, 2);
   const conflict = dirty && JSON.stringify(base) !== JSON.stringify(project);
+  const textureSize = draft.pi3_texture_size ?? "auto";
+  const videoTracks = draft.show.timeline.tracks.filter(
+    (track) => track.clips.length,
+  ).length;
   useUnsavedWarning(dirty);
   function update(next: Project) {
     setDraft(next);
@@ -165,6 +185,40 @@ export function ProjectEditor({
         <p className="hint">
           Preview is downscaled and encoded in the background. Set its rate to 0
           to disable capture without changing the native output.
+        </p>
+        <div className="fields">
+          <label>
+            Pi 3 texture atlas
+            <select
+              disabled={advanced}
+              value={textureSize}
+              aria-describedby="pi3-texture-hint"
+              onChange={(e) => {
+                const size = e.target.value;
+                update({
+                  ...draft,
+                  pi3_texture_size:
+                    size === "auto"
+                      ? size
+                      : (Number(size) as 384 | 512 | 768 | 1024),
+                });
+              }}
+            >
+              <option value="auto">Auto (recommended)</option>
+              <option value="384">384 × 384</option>
+              <option value="512">512 × 512</option>
+              <option value="768">768 × 768</option>
+              <option value="1024">1024 × 1024</option>
+            </select>
+          </label>
+        </div>
+        <p className="hint" id="pi3-texture-hint">
+          {textureSize === "auto"
+            ? "Prepares sizes suited to the video. The Pi tests playback speed before choosing."
+            : videoTracks > 0 && videoTracks <= 4
+              ? `With ${videoTracks} full-length ${videoTracks === 1 ? "video" : "videos"}, each gets a ${textureSize / (videoTracks > 1 ? 2 : 1)} × ${textureSize / (videoTracks > 2 ? 2 : 1)} texture.`
+              : "Larger textures hold more detail and take more work to play."}{" "}
+          Applies when you prepare the next Pi 3 show.
         </p>
       </section>
       <section className="panel form-panel">
@@ -382,12 +436,13 @@ export function ProjectEditor({
                 </fieldset>
               ))}
             </details>
-            <details>
+            <details onToggle={(e) => setSurfacesOpen(e.currentTarget.open)}>
               <summary>Surfaces · {draft.surfaces.length}</summary>
               <p className="hint">
                 Disable a surface to hide its foreground and background while
                 keeping its mapping. Turning off foreground cues alone keeps its
-                background visible.
+                background visible. Assign a video in Show to match its content
+                size here.
               </p>
               <button
                 type="button"
@@ -404,6 +459,31 @@ export function ProjectEditor({
                 Enable all surfaces
               </button>
               {draft.surfaces.map((surface, index) => {
+                const sceneIds = new Set(
+                  draft.show.timeline.tracks
+                    .find((track) => track.surface_id === surface.id)
+                    ?.clips.map((clip) => clip.scene_id),
+                );
+                const videos = draft.scenes.filter(
+                  (scene) => scene.type === "video" && sceneIds.has(scene.id),
+                );
+                const sizes = videos.map((scene) =>
+                  assets?.find(
+                    (asset) => asset.path === scene.path && !asset.error,
+                  ),
+                );
+                const detected = sizes[0];
+                const width = detected?.width ?? 0;
+                const height = detected?.height ?? 0;
+                const canMatch =
+                  width >= 16 &&
+                  width <= 8192 &&
+                  height >= 16 &&
+                  height <= 8192 &&
+                  sizes.every(
+                    (asset) =>
+                      asset?.width === width && asset?.height === height,
+                  );
                 const change = (value: Partial<typeof surface>) =>
                   update({
                     ...draft,
@@ -551,12 +631,15 @@ export function ProjectEditor({
                         />
                         Allow foreground cues
                       </label>
+                    </div>
+                    <div className="surface-content-size">
                       {(["width", "height"] as const).map((key) => (
                         <label key={key}>
                           Content {key} (pixels)
                           <input
                             type="number"
                             min={16}
+                            max={8192}
                             value={surface.logical[key]}
                             onChange={(e) =>
                               change({
@@ -569,7 +652,28 @@ export function ProjectEditor({
                           />
                         </label>
                       ))}
+                      {canMatch && (
+                        <button
+                          type="button"
+                          disabled={
+                            surface.logical.width === width &&
+                            surface.logical.height === height
+                          }
+                          onClick={() => change({ logical: { width, height } })}
+                        >
+                          {surface.logical.width === width &&
+                          surface.logical.height === height
+                            ? `Matches video · ${width} × ${height}`
+                            : `Match timeline video · ${width} × ${height}`}
+                        </button>
+                      )}
                     </div>
+                    {videos.length > 0 && assets && !canMatch && (
+                      <p className="hint">
+                        Enter the content size when video dimensions differ or
+                        are unavailable.
+                      </p>
+                    )}
                   </fieldset>
                 );
               })}

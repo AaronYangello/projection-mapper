@@ -20,6 +20,7 @@ export type Project = {
   id: string;
   name: string;
   description: string;
+  pi3_texture_size?: "auto" | 384 | 512 | 768 | 1024;
   canvas: {
     width: number;
     height: number;

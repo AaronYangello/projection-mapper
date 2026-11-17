@@ -1,9 +1,11 @@
 """Convert a verified compiled timeline into VideoCore IV textures for offline playback."""
 
 import argparse
+import errno
 import hashlib
 import io
 import json
+import shutil
 import struct
 import subprocess
 import zlib
@@ -12,9 +14,15 @@ from zipfile import ZipFile
 
 import numpy as np
 from projection_show.config.store import ProjectStore
+from projection_show.media.catalog import probe
 
-SIZE = 512
+AUTO_TEXTURE_SIZES = (512, 768, 1024)
+TEXTURE_SIZES = (384, *AUTO_TEXTURE_SIZES)
 FPS = 30
+
+
+class TextureSizeLimit(ValueError):
+    """The converted atlas cannot be addressed by the 32-bit Pi renderer."""
 
 
 def copy_verified(bundle, target, record):
@@ -121,8 +129,39 @@ def show_data(project, atlas, automation, manifest):
     )
 
 
-def textures(video, output, total):
-    size_bytes = SIZE * SIZE * 3
+def preferred_texture_size(project, root, atlas):
+    """Choose the smallest tier that can use the available source detail."""
+    clips = {clip.id: clip for track in project.show.timeline.tracks for clip in track.clips}
+    scenes = {scene.id: scene for scene in project.scenes}
+    surfaces = {surface.id: surface for surface in project.surfaces}
+    media = {}
+    needed = AUTO_TEXTURE_SIZES[0]
+    for region in atlas["regions"]:
+        clip = clips.get(region["clip_id"])
+        scene = scenes.get(clip.scene_id) if clip else None
+        if scene and scene.type == "color":
+            continue
+        logical = surfaces[region["surface_id"]].logical
+        source = {}
+        if scene and scene.type in ("image", "video"):
+            if scene.path not in media:
+                media[scene.path] = probe(root, scene.path)
+            source = media[scene.path]
+        # The converter can also run from the compiled bundle without the source MP4s.
+        width = source.get("width") or logical.width
+        height = source.get("height") or logical.height
+        _, _, packed_width, packed_height = region["rect"]
+        _, _, fraction_x, fraction_y = region["uv"]
+        needed = max(
+            needed,
+            min(width, logical.width, packed_width) / fraction_x,
+            min(height, logical.height, packed_height) / fraction_y,
+        )
+    return next((size for size in AUTO_TEXTURE_SIZES if size >= needed), AUTO_TEXTURE_SIZES[-1])
+
+
+def textures(video, output, total, size):
+    size_bytes = size * size * 3
     offsets = []
     process = subprocess.Popen(
         [
@@ -135,7 +174,7 @@ def textures(video, output, total):
             "-map",
             "0:v:0",
             "-vf",
-            f"scale={SIZE}:{SIZE}:flags=area",
+            f"scale={size}:{size}:flags=area",
             "-an",
             "-pix_fmt",
             "rgb24",
@@ -147,9 +186,9 @@ def textures(video, output, total):
     )
     try:
         with output.open("xb") as file:
-            file.write(struct.pack("<4sIII", b"PSP1", SIZE, SIZE, total))
+            file.write(struct.pack("<4sIII", b"PSP1", size, size, total))
             file.write(bytes((total + 1) * 4))
-            previous = np.zeros(SIZE * SIZE, dtype=np.uint16)
+            previous = np.zeros(size * size, dtype=np.uint16)
             for i in range(total):
                 data = process.stdout.read(size_bytes)
                 if len(data) != size_bytes:
@@ -165,12 +204,12 @@ def textures(video, output, total):
                 delta = pixels if key else pixels ^ previous
                 if key or np.any(delta):
                     file.write(zlib.compress(delta.astype("<u2", copy=False).tobytes(), 3))
+                    if file.tell() >= 2**31:
+                        raise TextureSizeLimit("Pi 3 texture file exceeds the 2 GiB size limit")
                 previous = pixels
             if process.stdout.read(1) or process.wait():
                 raise ValueError("Atlas frame count differs from the compiled timeline")
             offsets.append(file.tell())
-            if offsets[-1] >= 2**31:
-                raise ValueError("Pi 3 texture file exceeds the size limit")
             file.seek(16)
             file.write(struct.pack(f"<{len(offsets)}I", *offsets))
     finally:
@@ -179,14 +218,49 @@ def textures(video, output, total):
             process.wait()
 
 
+def prepare_atlases(project, root, atlas, video, output, show, setting):
+    automatic = setting == "auto"
+    base = AUTO_TEXTURE_SIZES[0] if automatic else setting
+    target = preferred_texture_size(project, root, atlas) if automatic else base
+    total = round(show["duration"] * FPS)
+    if not total:
+        raise ValueError("Pi 3 needs at least one frame of video")
+    output.mkdir()
+    try:
+        textures(video, output / "atlas.psp", total, base)
+        variants = [base]
+        # Include a middle tier when it would improve on the fallback. The Pi tests
+        # the largest candidate first and only measures smaller ones if needed.
+        for size in AUTO_TEXTURE_SIZES[1:]:
+            if not automatic or size > target:
+                break
+            variant = output / f"atlas-{size}.psp"
+            try:
+                textures(video, variant, total, size)
+            except (TextureSizeLimit, OSError) as exc:
+                if isinstance(exc, OSError) and exc.errno not in (errno.ENOSPC, errno.EDQUOT):
+                    raise
+                variant.unlink(missing_ok=True)
+                print(f"Skipped {size} × {size}: {exc}")
+                break
+            variants.append(size)
+        show["texture_atlas"] = {"setting": setting, "sizes": variants}
+        (output / "show.json").write_text(json.dumps(show, indent=2) + "\n")
+    except BaseException:
+        shutil.rmtree(output)
+        raise
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("project", type=Path)
     p.add_argument("bundle", type=Path)
     p.add_argument("video", type=Path, help="already extracted playback.mp4")
     p.add_argument("output", type=Path)
+    p.add_argument("--texture-size", choices=["auto", *map(str, TEXTURE_SIZES)])
     args = p.parse_args()
-    project = ProjectStore(args.project).load()
+    store = ProjectStore(args.project)
+    project = store.load()
     with ZipFile(args.bundle) as bundle:
         manifest, atlas, automation, video = read_metadata(bundle)
     if manifest["profile"]["name"] != "pi4-1080p":
@@ -196,9 +270,10 @@ def main():
     if digest != video["sha256"] or args.video.stat().st_size != video["bytes"]:
         raise ValueError("Playback video does not match the verified show bundle")
     show = show_data(project, atlas, automation, manifest)
-    args.output.mkdir()
-    textures(args.video, args.output / "atlas.psp", round(show["duration"] * FPS))
-    (args.output / "show.json").write_text(json.dumps(show, indent=2) + "\n")
+    setting = project.pi3_texture_size
+    if args.texture_size is not None:
+        setting = "auto" if args.texture_size == "auto" else int(args.texture_size)
+    prepare_atlases(project, store.path.parent, atlas, args.video, args.output, show, setting)
     print("Generated", args.output, "from bundle", show["bundle_id"])
 
 
