@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Projection Mapper</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    color-scheme: dark;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #eef0f3;
+    background: #17191c;
+    --panel: #202328;
+    --soft: #2b3037;
+    --line: #444b55;
+    --muted: #b5bcc7;
+    --accent: #9cc3ff;
+    --green: #9bd3b3;
+    --amber: #ffd493;
+    --red: #ffbdb7;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  ::selection { color: #122843; background: var(--accent); }
+  body { margin: 0; }
+  main { max-width: 1072px; margin: auto; padding: 24px; }
+  h1, h2, p { margin: 0; }
+  h1 { font-size: 1.55rem; letter-spacing: -.025em; }
+  h2 { font-size: 1.17rem; letter-spacing: -.015em; }
+  .muted { color: var(--muted); }
+  small { font-size: .87rem; }
+  button, select, input { font: inherit; }
+  button, select {
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid #59626e;
+    border-radius: 6px;
+    background: var(--soft);
+    color: inherit;
+  }
+  button { cursor: pointer; white-space: nowrap; }
+  button:hover:not(:disabled), select:hover:not(:disabled) { background: #3b444f; border-color: #9aa8bc; }
+  button:disabled, select:disabled, input:disabled { opacity: .47; cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .primary { background: var(--accent); color: #122843; border-color: var(--accent); font-weight: 650; }
+  .primary:hover:not(:disabled) { background: #bed7ff; }
+  .danger { color: var(--red); border-color: #b57671; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .spread { justify-content: space-between; }
+  .strip { padding: 16px 0; border-bottom: 1px solid var(--line); }
+  #connection { color: var(--green); font-size: .87rem; }
+  #connection[data-online="false"] { color: var(--amber); }
+  #transportState { color: var(--muted); font-size: .87rem; margin-left: 4px; }
+  .seek { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .seek input { width: 100%; min-width: 40px; flex: 1; accent-color: var(--accent); min-height: 32px; }
+  #clock { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+  .scope { display: grid; grid-template-columns: minmax(190px, 2fr) minmax(115px, 1fr) auto; gap: 10px; margin: 14px 0 12px; align-items: end; }
+  .field { display: grid; gap: 4px; min-width: 0; color: var(--muted); }
+  .field select { width: 100%; min-width: 0; color: #eef0f3; }
+  .check { min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 4px; white-space: nowrap; }
+  .check input { width: 19px; height: 19px; accent-color: var(--accent); }
+  .notice { margin-top: 10px; color: var(--muted); font-size: .89rem; }
+  .status { min-height: 1.5em; color: var(--green); font-size: .9rem; }
+  .status[data-dirty="true"] { color: var(--amber); }
+  .fault { padding: 10px 12px; background: #362423; border: 1px solid #855956; border-radius: 6px; margin-top: 10px; color: var(--red); }
+  .board {
+    position: relative;
+    background: #11161d;
+    border: 1px solid var(--line);
+    margin: 10px auto 0;
+    width: 100%;
+    max-width: 800px;
+  }
+  .board::before { content: ""; display: block; padding-top: var(--board-ratio, 56.25%); }
+  .board > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .grid-line { stroke: #273342; stroke-width: .7; }
+  .surface path { stroke: #788ca3; fill: transparent; stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+  .surface path.picked { stroke: var(--accent); stroke-width: 2; stroke-dasharray: none; fill: #a3c4ff24; }
+  .corner {
+    position: absolute;
+    z-index: 1;
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    transform: translate(-50%, -50%);
+    touch-action: none;
+    cursor: grab;
+  }
+  .corner:hover:not(:disabled) { background: transparent; border-color: transparent; }
+  .corner span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--accent); border-radius: 50%; background: #203247; color: #eef0f3; pointer-events: none; }
+  .corner[aria-pressed="true"] { z-index: 2; }
+  .corner[aria-pressed="true"] span { background: var(--accent); color: #122843; }
+  .mapping { padding: 18px 0; }
+  .bar { padding: 13px 0; align-items: center; }
+  .fine { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 4px; background: var(--panel); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .fine select, .nudge button { min-width: 44px; }
+  .nudge { flex-wrap: nowrap; }
+  .fine .field { min-width: min(138px, 100%); }
+  .fine .field select { width: auto; }
+  .fine-label { color: var(--muted); font-size: .8rem; }
+  details { margin-top: 14px; }
+  summary { width: fit-content; color: var(--accent); cursor: pointer; min-height: 30px; }
+  .coordinates { display: grid; grid-template-columns: auto minmax(0, 9ch) minmax(0, 9ch); align-items: center; gap: 6px 10px; width: max-content; max-width: 100%; }
+  .coordinates input { min-height: 38px; min-width: 0; width: 100%; padding: 4px 6px; color: inherit; background: var(--panel); border: 1px solid #59626e; border-radius: 4px; font-variant-numeric: tabular-nums; }
+  footer { padding: 14px 0; border-top: 1px solid var(--line); }
+  @media (max-width: 570px) {
+    main { padding: 14px 16px; }
+    .scope { grid-template-columns: minmax(140px, 1fr) minmax(86px, .52fr); }
+    .scope .check { grid-column: 1 / -1; min-height: 36px; padding: 0; }
+    .bar .status { flex-basis: 100%; }
+    .fine .field { min-width: 112px; }
+    .nudge button { padding: 8px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="row spread">
+    <div>
+      <h1>Projection Mapper</h1>
+      <p id="project" class="muted">Connecting to the Pi…</p>
+    </div>
+    <p id="connection" data-online="false" role="status">Connecting…</p>
+  </header>
+
+  <section class="strip" aria-label="Show playback">
+    <div class="row">
+      <button id="play" class="primary" disabled>Play show</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="blackout" class="danger" disabled>Blackout</button>
+      <span id="transportState" aria-live="polite"></span>
+    </div>
+    <div class="seek">
+      <input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Show position" disabled>
+      <span id="clock">0:00 / 0:00</span>
+    </div>
+    <p class="notice">Live video preview is unavailable on this system. Watch the projector while you align.</p>
+    <p id="fault" class="fault" role="alert" hidden></p>
+  </section>
+
+  <section class="mapping" aria-labelledby="mapping">
+    <div class="row spread">
+      <h2 id="mapping">Align a surface</h2>
+      <small id="resolution" class="muted"></small>
+    </div>
+    <div class="scope">
+      <label class="field">Surface
+        <select id="surface" aria-label="Surface" disabled><option>Loading surfaces…</option></select>
+      </label>
+      <label class="field">Projector pattern
+        <select id="pattern" aria-label="Projector pattern" disabled>
+          <option value="show">Show</option>
+          <option value="grid">Grid</option>
+          <option value="white">White</option>
+          <option value="border">Border</option>
+        </select>
+      </label>
+      <label class="check"><input id="isolate" type="checkbox" disabled> Isolate surface</label>
+    </div>
+
+    <div id="board" class="board" aria-label="Projector geometry">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <pattern id="gridLines" width="50" height="50" patternUnits="userSpaceOnUse">
+            <path class="grid-line" d="M 0 50 V 0 H 50" fill="none"></path>
+          </pattern>
+        </defs>
+        <rect width="1000" height="1000" fill="url(#gridLines)"></rect>
+        <g id="outlines" class="surface"></g>
+      </svg>
+    </div>
+
+    <div class="row spread bar">
+      <p id="mappingStatus" class="status" role="status">Select a surface to adjust.</p>
+      <div class="row">
+        <button id="returnShow" type="button" disabled>Return to show</button>
+        <button id="revert" type="button" disabled>Revert</button>
+        <button id="save" type="button" class="primary" disabled>Save mapping</button>
+      </div>
+    </div>
+
+    <div class="fine" aria-label="Nudge corner">
+      <label class="field fine-label">Corner
+        <select id="cornerSelect" aria-label="Corner" disabled></select>
+      </label>
+      <div class="row nudge">
+        <button type="button" data-nudge="-1,0" aria-label="Nudge left" disabled>←</button>
+        <button type="button" data-nudge="0,-1" aria-label="Nudge up" disabled>↑</button>
+        <button type="button" data-nudge="0,1" aria-label="Nudge down" disabled>↓</button>
+        <button type="button" data-nudge="1,0" aria-label="Nudge right" disabled>→</button>
+      </div>
+      <label class="field fine-label">Step
+        <select id="step" aria-label="Nudge step" disabled><option value="1">1 px</option><option value="10">10 px</option></select>
+      </label>
+    </div>
+
+    <details>
+      <summary>Exact coordinates</summary>
+      <p class="muted notice">Use values from 0 to 1 within the projector canvas.</p>
+      <div id="coordinates" class="coordinates"><span></span><span class="muted">X</span><span class="muted">Y</span></div>
+    </details>
+  </section>
+
+  <footer><small class="muted">Timeline editing, show builds, media uploads, and shuffle mode are unavailable on this system. The installed show plays from the Pi.</small></footer>
+</main>
+
+<script>
+"use strict";
+
+const el = {};
+for (const id of ["project", "connection", "play", "stop", "blackout", "transportState", "seek", "clock", "fault", "resolution", "surface", "pattern", "isolate", "board", "outlines", "mappingStatus", "returnShow", "revert", "save", "cornerSelect", "step", "coordinates"]) {
+  el[id] = document.getElementById(id);
+}
+const cornerNames = ["Top left", "Top right", "Bottom right", "Bottom left"];
+const corners = [];
+const coords = [];
+const nudgeButtons = Array.from(document.querySelectorAll("[data-nudge]"));
+let state = null;
+let online = false;
+let busy = false;
+let polling = false;
+let epoch = 0;
+let surfaceId = "";
+let choicesKey = "";
+let selectedCorner = 0;
+let statusNote = "";
+let controlError = "";
+let draft = null;
+let drag = null;
+let timer = null;
+let queued = null;
+let previewRequest = null;
+let seekInput = false;
+let pendingPattern = null;
+
+function copyPoints(points) {
+  return points.map(function (p) { return p.slice(); });
+}
+
+function selectedSurface() {
+  return state && state.surfaces.find(function (s) { return s.id === surfaceId; });
+}
+
+function selectCorner(index) {
+  selectedCorner = index;
+  el.cornerSelect.value = String(index);
+  corners.forEach(function (button, i) {
+    button.setAttribute("aria-pressed", String(i === index));
+  });
+}
+
+cornerNames.forEach(function (name, index) {
+  const option = document.createElement("option");
+  option.value = String(index);
+  option.textContent = name;
+  el.cornerSelect.append(option);
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "corner";
+  button.setAttribute("aria-label", name + " corner");
+  button.hidden = true;
+  const number = document.createElement("span");
+  number.textContent = String(index + 1);
+  button.append(number);
+  el.board.append(button);
+  corners.push(button);
+
+  button.addEventListener("focus", function () { selectCorner(index); });
+  button.addEventListener("pointerdown", function (event) {
+    const surface = selectedSurface();
+    if (button.disabled || event.button !== 0 || !surface) return;
+    selectCorner(index);
+    const bounds = el.board.getBoundingClientRect();
+    const point = (draft ? draft.points : surface.points)[index];
+    drag = {
+      index: index, pointerId: event.pointerId,
+      x: event.clientX, y: event.clientY, width: bounds.width, height: bounds.height,
+      point: point.slice()
+    };
+    button.setPointerCapture(event.pointerId);
+  });
+  button.addEventListener("pointermove", function (event) {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    moveCorner(drag.index, [
+      drag.point[0] + (event.clientX - drag.x) / drag.width,
+      drag.point[1] + (event.clientY - drag.y) / drag.height
+    ]);
+  });
+  function release(event) {
+    if (drag && drag.pointerId === event.pointerId) drag = null;
+  }
+  button.addEventListener("pointerup", release);
+  button.addEventListener("pointercancel", release);
+  button.addEventListener("lostpointercapture", release);
+  button.addEventListener("keydown", function (event) {
+    const direction = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]}[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    selectCorner(index);
+    nudge(direction[0], direction[1], event.shiftKey ? 10 : Number(el.step.value));
+  });
+
+  const label = document.createElement("span");
+  label.textContent = name;
+  el.coordinates.append(label);
+  const pair = ["X", "Y"].map(function (axis, coordinate) {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "0";
+    input.max = "1";
+    input.step = "0.0001";
+    input.setAttribute("aria-label", name + " " + axis);
+    input.addEventListener("change", function () {
+      const surface = selectedSurface();
+      if (!surface) return;
+      const value = input.valueAsNumber;
+      if (!Number.isFinite(value)) {
+        drawGeometry();
+        return;
+      }
+      const point = (draft ? draft.points : surface.points)[index].slice();
+      point[coordinate] = value;
+      selectCorner(index);
+      moveCorner(index, point);
+      input.value = (draft ? draft.points : surface.points)[index][coordinate].toFixed(4);
+    });
+    el.coordinates.append(input);
+    return input;
+  });
+  coords.push(pair);
+});
+
+function formatTime(seconds) {
+  const whole = Math.max(0, Math.floor(seconds || 0));
+  return Math.floor(whole / 60) + ":" + ("0" + (whole % 60)).slice(-2);
+}
+
+function paintClock() {
+  if (!state) return;
+  el.seek.max = String(state.duration || 1);
+  if (!seekInput) el.seek.value = String(state.position || 0);
+  el.clock.textContent = formatTime(Number(el.seek.value)) + " / " + formatTime(state.duration);
+}
+
+function updateChoices() {
+  const surfaces = state.surfaces;
+  const key = JSON.stringify(surfaces.map(function (s) { return [s.id, s.name]; }));
+  if (choicesKey !== key) {
+    choicesKey = key;
+    const fragment = document.createDocumentFragment();
+    const groups = new Map();
+    surfaces.forEach(function (surface) {
+      const parts = surface.name.split(/\s+[·—–]\s+/);
+      const groupName = parts.length > 1 ? parts[0] : "";
+      const option = document.createElement("option");
+      option.value = surface.id;
+      option.textContent = groupName ? parts.slice(1).join(" · ") : surface.name;
+      if (!groupName) {
+        fragment.append(option);
+        return;
+      }
+      if (!groups.has(groupName)) {
+        const group = document.createElement("optgroup");
+        group.label = groupName;
+        groups.set(groupName, group);
+        fragment.append(group);
+      }
+      groups.get(groupName).append(option);
+    });
+    if (!surfaces.length) {
+      const option = document.createElement("option");
+      option.textContent = "No surfaces installed";
+      fragment.append(option);
+    }
+    el.surface.textContent = "";
+    el.surface.append(fragment);
+  }
+  if (!selectedSurface()) surfaceId = draft ? draft.id : (surfaces.length ? surfaces[0].id : "");
+  el.surface.value = surfaceId;
+}
+
+function drawGeometry() {
+  el.outlines.textContent = "";
+  const surface = selectedSurface();
+  const points = draft ? draft.points : (surface ? surface.points : null);
+  const editable = online && !busy && !!surface;
+  if (state) state.surfaces.forEach(function (item) {
+    if (item.id === surfaceId) return;
+    drawOutline(item.points, false);
+  });
+  if (points) drawOutline(points, true);
+  corners.forEach(function (button, index) {
+    button.hidden = !points;
+    button.disabled = !editable;
+    button.setAttribute("aria-pressed", String(index === selectedCorner));
+    coords[index].forEach(function (field, coordinate) {
+      field.disabled = !editable;
+      if (points && document.activeElement !== field) field.value = points[index][coordinate].toFixed(4);
+    });
+    if (points) {
+      button.style.left = (points[index][0] * 100) + "%";
+      button.style.top = (points[index][1] * 100) + "%";
+    }
+  });
+}
+
+function drawOutline(points, picked) {
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  const nodes = points.map(function (p) { return (p[0] * 1000) + "," + (p[1] * 1000); });
+  path.setAttribute("d", "M " + nodes.join(" L ") + " Z");
+  if (picked) path.setAttribute("class", "picked");
+  el.outlines.append(path);
+}
+
+function paint() {
+  const active = online && !busy && !!state;
+  const surface = selectedSurface();
+  const canMap = active && !!surface;
+  el.connection.dataset.online = String(online);
+  el.connection.textContent = online ? "Connected to the Pi" : (state ? "Reconnecting…" : "Connecting…");
+  el.play.disabled = !active;
+  el.stop.disabled = !active || state.transport === "stopped";
+  el.blackout.disabled = !active;
+  el.seek.disabled = !active || !state.duration;
+  el.surface.disabled = !canMap || !!draft;
+  el.pattern.disabled = !canMap;
+  el.isolate.disabled = !canMap;
+  el.returnShow.disabled = !canMap || (state.pattern === "show" && !state.isolate);
+  el.revert.disabled = !canMap || !draft;
+  el.save.disabled = !canMap || !draft;
+  el.cornerSelect.disabled = !canMap;
+  el.step.disabled = !canMap;
+  nudgeButtons.forEach(function (button) { button.disabled = !canMap; });
+
+  if (state) {
+    updateChoices();
+    el.project.textContent = state.project_name;
+    el.resolution.textContent = state.width + " × " + state.height + " canvas";
+    el.board.style.setProperty("--board-ratio", (100 * state.height / state.width) + "%");
+    el.play.textContent = state.transport === "playing" ? "Pause" : (state.transport === "paused" ? "Resume show" : "Play show");
+    el.blackout.textContent = state.blackout ? "Restore output" : "Blackout";
+    el.blackout.setAttribute("aria-pressed", String(state.blackout));
+    const transport = {playing: "Playing", paused: "Paused", stopped: "Stopped"}[state.transport];
+    el.transportState.textContent = state.blackout ? transport + " · Blackout on" : transport;
+    el.pattern.value = pendingPattern ? pendingPattern.pattern : state.pattern;
+    el.isolate.checked = pendingPattern ? pendingPattern.isolate : state.isolate === surfaceId;
+    paintClock();
+  }
+  const needsPattern = state && state.transport === "stopped" && state.pattern === "show";
+  let mappingMessage = statusNote || (surface
+    ? (needsPattern ? "Choose the Grid pattern to see the alignment while the show is stopped." : "Drag a corner or use the nudge buttons.")
+    : "Select a surface to adjust.");
+  if (draft) {
+    if (!online) mappingMessage = "Unsaved · reconnect before saving";
+    else if (state.blackout) mappingMessage = "Unsaved · projector blacked out";
+    else if (queued || previewRequest) mappingMessage = "Unsaved · sending to projector…";
+    else if (needsPattern && draft.previewed) mappingMessage = "Unsaved · choose a projector pattern to see the adjustment";
+    else if (draft.previewed) mappingMessage = "Unsaved · visible on projector";
+    else mappingMessage = "Unsaved · projector update unconfirmed";
+  }
+  el.mappingStatus.dataset.dirty = String(!!draft);
+  el.mappingStatus.textContent = mappingMessage;
+  const renderer = state && state.renderer;
+  const message = controlError || (renderer && renderer.error);
+  el.fault.hidden = !message;
+  el.fault.textContent = message || "";
+  drawGeometry();
+}
+
+async function request(path, body) {
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const timeout = controller ? setTimeout(function () { controller.abort(); }, 4000) : null;
+  const options = { cache: "no-store" };
+  if (controller) options.signal = controller.signal;
+  if (body) {
+    options.method = "POST";
+    options.headers = {"Content-Type": "application/json"};
+    options.body = JSON.stringify(body);
+  }
+  try {
+    const response = await fetch(path, options);
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || "Request failed (" + response.status + ").");
+    if (!Array.isArray(result.surfaces)) throw new Error("The Pi returned an invalid show state.");
+    return result;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function failure(error) {
+  const lost = error.name === "AbortError" || error instanceof TypeError;
+  if (lost) online = false;
+  controlError = lost ? "Connection to the Pi was lost. Reconnect and try again." : error.message;
+}
+
+async function poll() {
+  if (polling || busy || previewRequest) return;
+  polling = true;
+  const ticket = epoch;
+  try {
+    const result = await request("/api/state");
+    if (ticket === epoch) {
+      if (!online) {
+        controlError = "";
+      }
+      online = true;
+      state = result;
+      updateChoices();
+      paint();
+      schedulePreview();
+    }
+  } catch (error) {
+    if (ticket === epoch) {
+      online = false;
+      failure(error);
+      paint();
+    }
+  } finally {
+    polling = false;
+  }
+}
+
+async function post(body, complete) {
+  if (!online || busy) return;
+  busy = true;
+  ++epoch;
+  controlError = "";
+  paint();
+  try {
+    if (previewRequest) await previewRequest;
+    const result = await request("/api/control", body);
+    state = result;
+    if (complete) complete();
+  } catch (error) {
+    failure(error);
+  } finally {
+    busy = false;
+    if (body.action === "pattern") pendingPattern = null;
+    if (body.action === "seek") seekInput = false;
+    schedulePreview();
+    paint();
+  }
+}
+
+function schedulePreview() {
+  if (timer || previewRequest || !queued || !online || busy) return;
+  timer = setTimeout(sendPreview, 48);
+}
+
+function sendPreview() {
+  timer = null;
+  if (!queued || !online || busy || previewRequest) return;
+  const body = queued;
+  queued = null;
+  ++epoch;
+  previewRequest = (async function () {
+    try {
+      state = await request("/api/control", body);
+      if (draft && draft.id === body.id) {
+        draft.previewed = true;
+        controlError = "";
+      }
+    } catch (error) {
+      if (draft) draft.previewed = false;
+      failure(error);
+    }
+  })();
+  previewRequest.then(function () {
+    previewRequest = null;
+    schedulePreview();
+    paint();
+  });
+  paint();
+}
+
+function clockwise(points) {
+  return points.every(function (p, i) {
+    const q = points[(i + 1) % 4];
+    const r = points[(i + 2) % 4];
+    return ((q[0] - p[0]) * (r[1] - q[1])) - ((q[1] - p[1]) * (r[0] - q[0])) > 0.000001;
+  });
+}
+
+function moveCorner(index, point) {
+  const surface = selectedSurface();
+  if (!surface || !online || busy) return;
+  const previous = draft ? draft.points : surface.points;
+  const next = copyPoints(previous);
+  next[index] = point.map(function (axis) { return Math.min(1, Math.max(0, axis)); });
+  if (next[index].every(function (axis, coordinate) { return Math.abs(axis - previous[index][coordinate]) < 0.000001; })) return;
+  if (!clockwise(next)) {
+    controlError = "Corners must form a convex surface without crossing.";
+    paint();
+    return;
+  }
+  if (!draft) draft = {id: surface.id, revision: state.revision};
+  draft.points = next;
+  draft.previewed = false;
+  controlError = "";
+  statusNote = "";
+  queued = {action: "mapping", id: draft.id, revision: draft.revision, points: draft.points};
+  schedulePreview();
+  paint();
+}
+
+function nudge(x, y, step) {
+  const surface = selectedSurface();
+  if (!surface || !state) return;
+  const point = (draft ? draft.points : surface.points)[selectedCorner];
+  moveCorner(selectedCorner, [point[0] + x * step / state.width, point[1] + y * step / state.height]);
+}
+
+function finish(action) {
+  if (!draft || busy || !online) return;
+  clearTimeout(timer);
+  timer = null;
+  queued = null;
+  const body = {action: action, id: draft.id, revision: action === "save" ? draft.revision : state.revision};
+  if (action === "save") body.points = draft.points;
+  post(body, function () {
+    draft = null;
+    statusNote = action === "save" ? "Mapping saved on the Pi." : "Saved corners restored.";
+  });
+}
+
+function setPattern(pattern, isolate) {
+  if (!selectedSurface() || !online || busy) return;
+  pendingPattern = {pattern: pattern, isolate: isolate};
+  post({action: "pattern", pattern: pattern, id: surfaceId, isolate: isolate});
+}
+
+el.play.addEventListener("click", function () { post({action: state.transport === "playing" ? "pause" : "play"}); });
+el.stop.addEventListener("click", function () { post({action: "stop"}); });
+el.blackout.addEventListener("click", function () { post({action: state.blackout ? "restore" : "blackout"}); });
+el.seek.addEventListener("input", function () { seekInput = true; paintClock(); });
+el.seek.addEventListener("change", function () {
+  const seconds = Number(el.seek.value);
+  post({action: "seek", seconds: seconds});
+});
+el.surface.addEventListener("change", function () {
+  if (draft) return;
+  const isolated = !!state.isolate;
+  const repositionPattern = state.pattern !== "show";
+  surfaceId = el.surface.value;
+  statusNote = "";
+  selectCorner(0);
+  if (isolated || repositionPattern) setPattern(state.pattern, isolated);
+  else paint();
+});
+el.pattern.addEventListener("change", function () { setPattern(el.pattern.value, el.isolate.checked); });
+el.isolate.addEventListener("change", function () { setPattern(el.pattern.value, el.isolate.checked); });
+el.returnShow.addEventListener("click", function () { setPattern("show", false); });
+el.save.addEventListener("click", function () { finish("save"); });
+el.revert.addEventListener("click", function () { finish("revert"); });
+el.cornerSelect.addEventListener("change", function () { selectCorner(Number(el.cornerSelect.value)); });
+nudgeButtons.forEach(function (button) {
+  button.addEventListener("click", function () {
+    const direction = button.dataset.nudge.split(",").map(Number);
+    nudge(direction[0], direction[1], Number(el.step.value));
+  });
+});
+window.addEventListener("beforeunload", function (event) {
+  if (draft) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
+poll();
+setInterval(poll, 1200);
+</script>
+</body>
+</html>

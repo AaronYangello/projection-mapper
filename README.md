@@ -144,6 +144,7 @@ build worker remain outside this phase. Adding/removing topology still uses YAML
 - [Implementation decisions and risk register](docs/timeline-implementation.md)
 - [Mapping and calibration](docs/mapping.md)
 - [Raspberry Pi setup and commissioning](docs/raspberry-pi.md)
+- [Raspberry Pi 3 compatibility and offline controls](compat/pi3/README.md)
 - [Native media playback](docs/media.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Full supplied specification](docs/projection_show_engine_spec.md)
