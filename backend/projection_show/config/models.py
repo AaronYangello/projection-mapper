@@ -88,6 +88,7 @@ class Surface(Named):
     foreground_enabled: bool = True
     role: Literal["media", "lighting"] = "media"
     shape: Literal["rectangle", "circle"] = "rectangle"
+    blend_mode: Literal["normal", "multiply"] = "normal"
     light: Light = Field(default_factory=Light)
 
 

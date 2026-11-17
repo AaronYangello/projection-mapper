@@ -66,6 +66,7 @@ class _Pipeline:
         self.audio_factory = factory
         self.audio_device = audio_device
         self.expected_state = None
+        self.pending_end = None
         # No Python callbacks from native streaming threads: playbin property setters
         # can hold the GIL while waiting on a lock held by those threads.
         self.settings = None
@@ -123,6 +124,8 @@ class _Pipeline:
         if self.state == "LOADING" and time.monotonic() - self.last_frame > 15:
             self.error = "Playback preroll timed out after fifteen seconds"
             self.state = "ERROR"
+        end_message = self.pending_end
+        self.pending_end = None
         for _ in range(256):
             message = self.bus.pop()
             if message is None:
@@ -136,15 +139,22 @@ class _Pipeline:
                 warning, _ = message.parse_warning()
                 self.warning = str(warning)[:300]
             elif message.type in (G.MessageType.SEGMENT_DONE, G.MessageType.EOS):
-                if loop and playing:
-                    if not self.seek(0, True, flush=message.type == G.MessageType.EOS):
-                        self.error = "Loop seek failed"
-                        self.state = "ERROR"
-                    else:
-                        self.loop_count += 1
+                end_message = message.type
+        # A segment can finish decoding while its last frame is still paused in
+        # preroll. Keep that frame and defer the end/loop action until playback.
+        # End messages from an older seek must not complete the new generation.
+        if end_message is not None and self.generation == generation:
+            if not playing:
+                self.pending_end = end_message
+            elif loop:
+                if not self.seek(0, True, flush=end_message == G.MessageType.EOS):
+                    self.error = "Loop seek failed"
+                    self.state = "ERROR"
                 else:
-                    self.state = "ENDED"
-                    self.pipeline.set_state(G.State.PAUSED)
+                    self.loop_count += 1
+            else:
+                self.state = "ENDED"
+                self.pipeline.set_state(G.State.PAUSED)
         if self.error:
             self.pipeline.set_state(G.State.PAUSED)
             return self.frame, self.health()
@@ -175,9 +185,10 @@ class _Pipeline:
             self.expected_state = desired
             if desired == G.State.PLAYING:
                 self.last_frame = time.monotonic()  # Resuming a long pause is not a stall.
-        sample = self.sink.emit("try-pull-sample", 0)
-        if sample is None and not playing:
-            sample = self.sink.emit("try-pull-preroll", 0)
+        # Pulling a playback sample clears appsink's preroll reference even when
+        # paused and no playback sample is returned. Choose the paused action first
+        # so a seek's new frame cannot be discarded before we display it.
+        sample = self.sink.emit("try-pull-sample" if playing else "try-pull-preroll", 0)
         if sample:
             buffer = sample.get_buffer()
             caps = sample.get_caps().get_structure(0)

@@ -20,12 +20,15 @@ uniform bool circle;
 uniform vec2 logical;
 uniform vec3 color;
 uniform float opacity;
+uniform bool multiply;
 out vec4 frag;
 void main() {
     if (circle && length((uv-vec2(.5))*logical)>min(logical.x,logical.y)*.5) discard;
     vec2 p=region.xy+uv*region.zw;
     if(flip_y) p.y=1.-p.y;
     vec3 rgb=use_image?texture(image,p).rgb:color;
+    // White is neutral for multiply; opacity fades the face back to the light beneath.
+    if (multiply) rgb=mix(vec3(1.),rgb,opacity);
     frag=vec4(rgb,opacity);
 }
 """
@@ -242,6 +245,17 @@ class TimelineRenderer:
                 continue
             engine.master.framebuffer.use()
             self.ctx.enable(moderngl.BLEND)
+            multiply = pattern == "show" and surface.get("blend_mode") == "multiply"
+            self.ctx.blend_func = (
+                (moderngl.DST_COLOR, moderngl.ZERO, moderngl.ZERO, moderngl.ONE)
+                if multiply
+                else (
+                    moderngl.SRC_ALPHA,
+                    moderngl.ONE_MINUS_SRC_ALPHA,
+                    moderngl.ONE,
+                    moderngl.ONE_MINUS_SRC_ALPHA,
+                )
+            )
             viewport = projectors[surface["projector_id"]]["viewport"]
             self.ctx.scissor = (
                 viewport["x"],
@@ -260,6 +274,7 @@ class TimelineRenderer:
             p["logical"].value = tuple(surface["logical"][k] for k in ("width", "height"))
             p["color"].value = color_rgb(color)
             p["opacity"].value = opacity
+            p["multiply"].value = multiply
             if texture:
                 texture.use(0)
             p["image"].value = 0

@@ -114,7 +114,7 @@ def _read_validated(directory: Path, project):
     validate_destination(project, profile)
     specifications = {}
     for definition in automation["surfaces"]:
-        if set(definition) != {"id", "role", "shape", "light", "logical"}:
+        if set(definition) - {"blend_mode"} != {"id", "role", "shape", "light", "logical"}:
             raise ValueError("Unsupported surface metadata")
         sid = definition["id"]
         if sid not in ids or sid in specifications:

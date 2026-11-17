@@ -242,6 +242,11 @@ def plan(project: Project, root: Path, profile_name="pi4-1080p", encoder="auto",
                 "id": t.surface_id,
                 "role": surfaces[t.surface_id].role,
                 "shape": surfaces[t.surface_id].shape,
+                **(
+                    {"blend_mode": surfaces[t.surface_id].blend_mode}
+                    if surfaces[t.surface_id].blend_mode != "normal"
+                    else {}
+                ),
                 "light": surfaces[t.surface_id].light.model_dump(),
                 "logical": surfaces[t.surface_id].logical.model_dump(),
             }

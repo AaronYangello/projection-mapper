@@ -131,7 +131,15 @@ content → shape mask → surface opacity → homography → alpha composition 
 Clips occupy `[start, end)`. Opacity continues across boundaries and empty spans. Empty
 media spans draw nothing; lighting keeps following its curve. Circle masks use logical
 pixel aspect and discard their exterior, preserving content beneath. Lights draw directly;
-only a small 64×64 calibration target is retained. Project surface array order controls
+only a small 64×64 calibration target is retained.
+
+Media surfaces can choose **Compositing → Multiply over lights** in Project. Put the
+lighting surfaces before the face in project surface order. White face pixels preserve
+the light beneath, dark/colored details tint it, and face opacity fades those details
+back to the underlying light. A circle media mask keeps the corners clear. This allows
+a head light to control brightness without a second white face background brightening
+it. Normal composition is the default; multiply is saved in bundle metadata and does
+not re-encode video. Older bundles continue to use normal composition. Project surface array order controls
 composition when mapped surfaces overlap; lane ordering is an authoring preference.
 
 Pause freezes pipeline and timeline. Seek sets absolute time and invalidates old decoder

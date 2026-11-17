@@ -114,3 +114,25 @@ def test_cancel_failure_keep_output(compiled_project, monkeypatch):
         compile_show(p, root, out, encoder="libx264")
     assert out.read_bytes() == b"previous"
     assert not list(out.parent.glob(".bundle-*"))
+
+
+def test_multiply_roundtrip_bundle_metadata_and_legacy_default(compiled_project):
+    from projection_show.deployments import Deployments
+    from projection_show.runtime import Runtime
+
+    project, root = compiled_project
+    before = plan(project, root, encoder="libx264")
+    project.surfaces[0].blend_mode = "multiply"
+    project = Project.model_validate(project.model_dump(mode="json"))
+    current = plan(project, root, encoder="libx264")
+    assert change_kind(current, before) == "manifest_only"
+    assert current["automation"]["surfaces"][0]["blend_mode"] == "multiply"
+    bundle = root / "multiply.pshow"
+    compile_show(project, root, bundle, encoder="libx264")
+    staged = Deployments(root / "deployments", StorageLimits(free_bytes=0)).stage(bundle, project)
+    assert staged["automation"]["surfaces"][0]["blend_mode"] == "multiply"
+    # A legacy normal bundle overrides a destination's newer multiply setting.
+    runtime = Runtime.__new__(Runtime)
+    runtime.project = project
+    runtime.deployment = {"automation": before["automation"]}
+    assert runtime.render_project()["surfaces"][0]["blend_mode"] == "normal"

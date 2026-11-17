@@ -94,6 +94,13 @@ def test_real_pipeline_clock_pause_seek_and_loop(compiled_project, monkeypatch):
             frame, health = tick(seconds=0.7, generation=2, playing=False)
             time.sleep(0.02)
         assert health["position"] == pytest.approx(0.7, abs=0.05)
+        assert frame.seconds == pytest.approx(0.7, abs=0.05)
+        for _ in range(20):
+            frame, health = tick(seconds=1.7, generation=3, loop=True, playing=False)
+            time.sleep(0.02)
+        assert health["state"] == "READY"
+        assert health["position"] == pytest.approx(1.7, abs=0.05)
+        assert frame.seconds == pytest.approx(1.7, abs=0.05)
         for _ in range(130):
             frame, health = tick(seconds=1.7, generation=3, loop=True)
             time.sleep(0.02)

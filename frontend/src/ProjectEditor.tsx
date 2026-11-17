@@ -483,6 +483,26 @@ export function ProjectEditor({
                           <option value="circle">Circle</option>
                         </select>
                       </label>
+                      {surface.role === "media" && (
+                        <label>
+                          Compositing
+                          <select
+                            value={surface.blend_mode ?? "normal"}
+                            onChange={(e) =>
+                              change({
+                                blend_mode: e.target.value as
+                                  | "normal"
+                                  | "multiply",
+                              })
+                            }
+                          >
+                            <option value="normal">Normal</option>
+                            <option value="multiply">
+                              Multiply over lights
+                            </option>
+                          </select>
+                        </label>
+                      )}
                       {surface.role === "lighting" && (
                         <label>
                           Light color

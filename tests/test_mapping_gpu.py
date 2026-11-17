@@ -397,3 +397,68 @@ def test_image_texture_orientation(gpu, demo, tmp_path):
     assert gpu.playback.health["state"] == "ERROR"
     assert "GPU texture dimension limit" in gpu.playback.health["error"]
     assert gpu.playback.texture is None
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("gles_adapter", [False, True])
+def test_multiply_face_preserves_head_light_and_fades_details(gpu, demo, monkeypatch, gles_adapter):
+    import copy
+
+    from projection_show.render.engine import Engine
+    from projection_show.render.gles import Context
+
+    engine = Engine(Context((320, 240), dialect="desktop")) if gles_adapter else gpu
+    try:
+        f = timeline_frame(demo)
+        light = copy.deepcopy(f["project"]["surfaces"][4])
+        face = copy.deepcopy(f["project"]["surfaces"][0])
+        box = dict(top_left=[0, 0], top_right=[1, 0], bottom_right=[1, 1], bottom_left=[0, 1])
+        light.update(id="head", shape="circle", mapping=box)
+        face.update(id="face", shape="circle", blend_mode="multiply", mapping=box)
+        f["project"]["surfaces"] = [light, face]
+        f["layers"] = [
+            dict(
+                id="head",
+                surface_id="head",
+                source_id=None,
+                clip_id=None,
+                opacity=0.6,
+                role="lighting",
+                color="#ffffff",
+            ),
+            dict(
+                id="face",
+                surface_id="face",
+                source_id="face",
+                clip_id="face",
+                opacity=1,
+                role="media",
+                color=None,
+            ),
+        ]
+        f["deployment"]["atlas"]["regions"] = [dict(clip_id="face", uv=[0, 0, 1, 1])]
+        pixels = np.full((64, 64, 3), 255, dtype=np.uint8)
+        pixels[:, 40:] = 0
+        pixels[:, 28:36] = [255, 0, 0]
+        monkeypatch.setattr(engine.timeline, "update", lambda frame: None)
+        engine.timeline.texture = engine.ctx.texture((64, 64), 3, pixels.tobytes())
+        engine.render(f)
+        image = np.array(engine.image(), dtype=float)
+        assert image[120, 90] == pytest.approx([153, 153, 153], abs=1)
+        assert image[120, 160] == pytest.approx([153, 0, 0], abs=1)
+        assert image[120, 230] == pytest.approx([0, 0, 0], abs=1)
+        assert not image[1, 1].any()  # circle exterior remains black
+        f["layers"][1]["opacity"] = 0.5
+        engine.render(f)
+        assert np.array(engine.image(), dtype=float)[120, 230] == pytest.approx([76, 76, 76], abs=1)
+        f["layers"][0]["opacity"] = 0.9
+        engine.render(f)
+        assert np.array(engine.image(), dtype=float)[120, 90] == pytest.approx(
+            [230, 230, 230], abs=1
+        )
+        f["blackout"] = True
+        engine.render(f)
+        assert not np.array(engine.image(), dtype=float).any()
+    finally:
+        if gles_adapter:
+            engine.close()

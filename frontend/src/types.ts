@@ -3,6 +3,7 @@ export type Viewport = { x: number; y: number; width: number; height: number };
 export type Surface = Named & {
   role: "media" | "lighting";
   shape: "rectangle" | "circle";
+  blend_mode: "normal" | "multiply";
   light: { color: string };
   projector_id: string;
   logical: { width: number; height: number };

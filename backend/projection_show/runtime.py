@@ -572,7 +572,17 @@ class Runtime:
         data = self.project.model_dump(mode="json")
         if self.deployment:
             definitions = {s["id"]: s for s in self.deployment["automation"]["surfaces"]}
-            data["surfaces"] = [{**s, **definitions.get(s["id"], {})} for s in data["surfaces"]]
+            data["surfaces"] = [
+                {
+                    **s,
+                    **(
+                        {"blend_mode": "normal", **definitions[s["id"]]}
+                        if s["id"] in definitions
+                        else {}
+                    ),
+                }
+                for s in data["surfaces"]
+            ]
         return data
 
     def publish(self) -> None:
